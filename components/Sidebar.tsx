@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { CodeFile, GraphNode } from '../types';
-import { FileText, Box, Target, Upload, Code, Info, Network } from 'lucide-react';
+import { FileText, Box, Target, Upload, Code, Info, Network, FolderOpen } from 'lucide-react';
 
 interface SidebarProps {
   files: CodeFile[];
@@ -197,16 +197,39 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="p-4 border-t border-neutral-800 bg-neutral-950 h-48 flex flex-col">
         <div className="flex justify-between items-center mb-3 shrink-0">
             <h3 className="text-xs font-bold text-neutral-400 uppercase">Files ({files.length})</h3>
-            <label className="cursor-pointer p-1.5 bg-neutral-800 hover:bg-neutral-700 rounded text-neutral-300 transition-colors">
-                <Upload size={14} />
-                <input 
-                    type="file" 
-                    multiple 
-                    accept=".py,.js,.ts,.tsx,.jsx,.json,.html,.css,.java,.cpp,.c,.h,.rs,.go,.md,.txt"
-                    className="hidden" 
-                    onChange={onFileUpload} 
-                />
-            </label>
+            <div className="flex gap-2">
+              {/* Upload Files */}
+              <label
+                className="cursor-pointer p-1.5 bg-neutral-800 hover:bg-neutral-700 rounded text-neutral-300 transition-colors"
+                title="Upload individual files"
+              >
+                  <Upload size={14} />
+                  <input
+                      type="file"
+                      multiple
+                      accept=".py,.js,.ts,.tsx,.jsx,.json,.html,.css,.java,.cpp,.c,.h,.rs,.go,.md,.txt"
+                      className="hidden"
+                      onChange={onFileUpload}
+                  />
+              </label>
+              {/* Upload Folder */}
+              <label
+                className="cursor-pointer p-1.5 bg-neutral-800 hover:bg-neutral-700 rounded text-neutral-300 transition-colors"
+                title="Upload entire folder"
+              >
+                  <FolderOpen size={14} />
+                  <input
+                      type="file"
+                      multiple
+                      // @ts-ignore - webkitdirectory is not in TypeScript definitions but widely supported
+                      webkitdirectory=""
+                      directory=""
+                      accept=".py,.js,.ts,.tsx,.jsx,.json,.html,.css,.java,.cpp,.c,.h,.rs,.go,.md,.txt"
+                      className="hidden"
+                      onChange={onFileUpload}
+                  />
+              </label>
+            </div>
         </div>
         <div className="flex-1 overflow-y-auto pr-1 custom-scrollbar">
           <ul className="space-y-1">

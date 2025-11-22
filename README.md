@@ -130,8 +130,10 @@ The app will be available at **http://localhost:3000**
 ### 1. Load Code
 
 - **Demo Mode**: Click "LOAD DEMO & ANALYZE" to see example analysis
-- **Upload Files**: Click the upload icon (📁) in the sidebar to load your own code
+- **Upload Files**: Click the upload icon (📁) in the sidebar to load individual files
+- **Upload Folder**: Click the folder icon (📂) to select and upload an entire directory
   - Supported: `.py`, `.js`, `.ts`, `.tsx`, `.jsx`, `.java`, `.c`, `.cpp`, `.go`, `.rs`, etc.
+  - **Tip**: Use folder upload for entire codebases!
 
 ### 2. Analyze
 
