@@ -1,0 +1,5 @@
+{
+  "name": "TelicLens",
+  "description": "A 'Jarvis-style' code inspection tool that visualizes both the Causal (data flow) and Telic (intentionality) structures of AI-generated codebases.",
+  "requestFramePermissions": []
+}
