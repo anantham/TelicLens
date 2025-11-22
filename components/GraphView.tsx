@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { AnalysisResult, GraphNode, GraphEdge, ViewMode, TraceResult } from '../types';
+import { ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
 
 interface GraphViewProps {
   data: AnalysisResult | null;
@@ -15,6 +16,12 @@ const getNodeRadius = (type: string) => {
 
 export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, traceHighlight }) => {
   const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>({});
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [hoveredNode, setHoveredNode] = useState<GraphNode | null>(null);
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
   // Simple auto-layout algorithm
   useEffect(() => {
@@ -91,6 +98,61 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
     setPositions(newPositions);
   }, [data, mode]);
 
+  // Detect redundant nodes (nodes with no dependents - nothing depends on them)
+  const redundantNodeIds = useMemo(() => {
+    if (!data) return new Set<string>();
+
+    const nodesWithDependents = new Set<string>();
+
+    // Find all nodes that are sources of edges (have things depending on them)
+    data.edges.forEach(edge => {
+      nodesWithDependents.add(edge.source);
+    });
+
+    // Nodes that are NOT sources of any edges are redundant
+    const redundant = new Set<string>();
+    data.nodes.forEach(node => {
+      // Skip intent nodes from redundancy check
+      if (node.type !== 'intent' && !nodesWithDependents.has(node.id)) {
+        redundant.add(node.id);
+      }
+    });
+
+    return redundant;
+  }, [data]);
+
+  // Zoom handler
+  const handleWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? 0.9 : 1.1;
+    setZoom(prev => Math.max(0.1, Math.min(5, prev * delta)));
+  };
+
+  // Pan handlers
+  const handleMouseDown = (e: React.MouseEvent) => {
+    setIsDragging(true);
+    setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    setMousePos({ x: e.clientX, y: e.clientY });
+    if (!isDragging) return;
+    setPan({
+      x: e.clientX - dragStart.x,
+      y: e.clientY - dragStart.y
+    });
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  // Reset view
+  const resetView = () => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  };
+
   if (!data) return <div className="flex items-center justify-center h-full text-neutral-500 font-mono text-sm animate-pulse">AWAITING CODEBASE...</div>;
 
   return (
@@ -98,8 +160,46 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
       <div className="absolute top-4 right-4 px-3 py-1 bg-black/80 backdrop-blur-sm text-[10px] font-bold tracking-widest text-neutral-500 rounded border border-neutral-800 pointer-events-none uppercase z-10">
         MODE: {mode}
       </div>
+
+      {/* Zoom Controls */}
+      <div className="absolute top-4 left-4 flex flex-col gap-2 z-10">
+        <button
+          onClick={() => setZoom(prev => Math.min(5, prev * 1.2))}
+          className="p-2 bg-black/80 backdrop-blur-sm border border-neutral-800 rounded hover:bg-neutral-800 transition-colors"
+          title="Zoom In"
+        >
+          <ZoomIn size={16} className="text-neutral-400" />
+        </button>
+        <button
+          onClick={() => setZoom(prev => Math.max(0.1, prev * 0.8))}
+          className="p-2 bg-black/80 backdrop-blur-sm border border-neutral-800 rounded hover:bg-neutral-800 transition-colors"
+          title="Zoom Out"
+        >
+          <ZoomOut size={16} className="text-neutral-400" />
+        </button>
+        <button
+          onClick={resetView}
+          className="p-2 bg-black/80 backdrop-blur-sm border border-neutral-800 rounded hover:bg-neutral-800 transition-colors"
+          title="Reset View"
+        >
+          <Maximize2 size={16} className="text-neutral-400" />
+        </button>
+        <div className="px-2 py-1 bg-black/80 backdrop-blur-sm border border-neutral-800 rounded text-[10px] text-neutral-500 text-center font-mono">
+          {Math.round(zoom * 100)}%
+        </div>
+      </div>
       
-      <svg className="w-full h-full select-none" viewBox="0 0 800 600" preserveAspectRatio="xMidYMid meet">
+      <svg
+        className="w-full h-full select-none"
+        viewBox={`${-pan.x / zoom} ${-pan.y / zoom} ${800 / zoom} ${600 / zoom}`}
+        preserveAspectRatio="xMidYMid meet"
+        onWheel={handleWheel}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+        style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+      >
         <defs>
           {/* Standard Gray Arrow (Causal/Dependency) */}
           <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
@@ -197,13 +297,24 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
 
           if (opacity === 0) return null;
 
+          // Create curved path instead of straight line
+          // Use quadratic bezier curve for smoother flow
+          const midX = (x1 + x2) / 2;
+          const midY = (y1 + y2) / 2;
+
+          // Calculate perpendicular offset for curve control point
+          const perpAngle = angle + Math.PI / 2;
+          const curveStrength = 30; // How pronounced the curve is
+          const controlX = midX + Math.cos(perpAngle) * curveStrength;
+          const controlY = midY + Math.sin(perpAngle) * curveStrength;
+
+          const pathData = `M ${x1} ${y1} Q ${controlX} ${controlY}, ${x2} ${y2}`;
+
           return (
             <g key={i} opacity={opacity} className="transition-all duration-500">
-              <line
-                x1={x1}
-                y1={y1}
-                x2={x2}
-                y2={y2}
+              <path
+                d={pathData}
+                fill="none"
                 stroke={strokeColor}
                 strokeWidth={strokeWidth}
                 markerEnd={markerId}
@@ -220,12 +331,17 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
           
           const isIntent = node.type === 'intent';
           const radius = getNodeRadius(node.type);
-          
+          const isRedundant = redundantNodeIds.has(node.id);
+
           // Colors
           let fillColor = '#171717';
           let strokeColor = '#404040';
-          
-          if (node.type === 'intent') {
+
+          if (isRedundant) {
+              // Redundant nodes get red highlighting
+              fillColor = '#450a0a';
+              strokeColor = '#ef4444';
+          } else if (node.type === 'intent') {
               fillColor = '#2e1065';
               strokeColor = '#a855f7';
           } else if (node.type === 'data') {
@@ -240,7 +356,17 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
           }
           
           // Base Opacity
-          let opacity = mode === ViewMode.TELIC && !isIntent ? 0.6 : 1;
+          let opacity = 1;
+
+          // In CAUSAL mode, hide intent nodes
+          if (mode === ViewMode.CAUSAL && isIntent) {
+              opacity = 0;
+          }
+
+          // In TELIC mode, dim non-intent nodes slightly
+          if (mode === ViewMode.TELIC && !isIntent) {
+              opacity = 0.6;
+          }
           
           // Trace Opacity Override
           if (traceHighlight) {
@@ -251,14 +377,19 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
               }
           }
 
+          // Skip rendering if completely invisible
+          if (opacity === 0) return null;
+
           const filter = isIntent && mode === ViewMode.TELIC ? "url(#glow-purple)" : undefined;
 
           return (
-            <g 
-              key={node.id} 
-              transform={`translate(${pos.x}, ${pos.y})`} 
+            <g
+              key={node.id}
+              transform={`translate(${pos.x}, ${pos.y})`}
               className="cursor-pointer transition-all duration-300 group"
               onClick={() => onNodeClick(node)}
+              onMouseEnter={() => setHoveredNode(node)}
+              onMouseLeave={() => setHoveredNode(null)}
               style={{ opacity }}
             >
               {/* Glow effect behind node */}
@@ -299,6 +430,43 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
           );
         })}
       </svg>
+
+      {/* Hover Tooltip */}
+      {hoveredNode && (
+        <div
+          className="absolute pointer-events-none z-20 bg-black/95 backdrop-blur-sm border border-neutral-700 rounded-lg p-3 shadow-2xl max-w-xs"
+          style={{
+            left: mousePos.x + 15,
+            top: mousePos.y + 15,
+          }}
+        >
+          <div className="font-mono text-sm font-bold text-white mb-1">
+            {hoveredNode.label}
+          </div>
+
+          {hoveredNode.type && (
+            <div className="text-[10px] uppercase tracking-wider text-neutral-400 mb-2">
+              {hoveredNode.type}
+              {redundantNodeIds.has(hoveredNode.id) && (
+                <span className="ml-2 text-red-400 font-bold">⚠ REDUNDANT</span>
+              )}
+            </div>
+          )}
+
+          {mode === ViewMode.TELIC && hoveredNode.intent && (
+            <div className="text-xs text-purple-300 mb-2 border-l-2 border-purple-500 pl-2">
+              <div className="text-[10px] uppercase text-purple-400 mb-1">Functionality:</div>
+              {hoveredNode.intent}
+            </div>
+          )}
+
+          {hoveredNode.description && (
+            <div className="text-xs text-neutral-300 mt-2">
+              {hoveredNode.description}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };
