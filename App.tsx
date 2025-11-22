@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { GraphView } from './components/GraphView';
 import { analyzeCodebase, traceCodeSelection } from './services/geminiService';
 import { CodeFile, AnalysisResult, ViewMode, GraphNode, TraceResult } from './types';
-import { Activity, Target, Loader2, Play, Network } from 'lucide-react';
+import { Activity, Target, Loader2, Play, Network, Download } from 'lucide-react';
+import { exportAsJSON, exportAsTextReport, exportAsMarkdown } from './utils/export';
 
 const DEMO_FILES: CodeFile[] = [
   {
@@ -125,6 +126,24 @@ export default function App() {
   const [isTracing, setIsTracing] = useState(false);
   const [traceHighlight, setTraceHighlight] = useState<TraceResult | null>(null);
 
+  // EXPORT STATE
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
+
+  // Close export menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(event.target as Node)) {
+        setShowExportMenu(false);
+      }
+    };
+
+    if (showExportMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showExportMenu]);
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
 
@@ -238,6 +257,38 @@ export default function App() {
       setSidebarMode('CODE');
   };
 
+  // Calculate security metrics
+  const getSecurityMetrics = () => {
+    if (!analysis) return null;
+
+    const functions = analysis.nodes.filter(n => n.type === 'function');
+    const intents = analysis.nodes.filter(n => n.type === 'intent');
+
+    // Find orphaned functions (no intent mapping)
+    const orphanedFunctions = functions.filter(fn => {
+      return !analysis.edges.some(e => e.source === fn.id && e.type === 'serves_intent');
+    });
+
+    // Calculate score (0-100)
+    let score = 100;
+    if (functions.length > 0) {
+      score -= (orphanedFunctions.length / functions.length) * 50; // Orphaned functions penalty
+    }
+    if (intents.length === 0 && functions.length > 0) {
+      score -= 30; // No intents identified
+    }
+
+    return {
+      score: Math.round(score),
+      orphanedFunctions,
+      intents: intents.length,
+      totalFunctions: functions.length,
+      hasIntents: intents.length > 0
+    };
+  };
+
+  const securityMetrics = getSecurityMetrics();
+
   return (
     <div className="flex h-screen w-full bg-black text-white overflow-hidden selection:bg-red-500/30">
       {/* Sidebar */}
@@ -283,7 +334,7 @@ export default function App() {
                  <div className="flex items-center gap-2 px-3 py-1 bg-blue-900/30 border border-blue-500/30 rounded text-xs text-blue-200 animate-in fade-in">
                     <Network size={12} />
                     Active Trace: {traceHighlight.relatedNodeIds.length} nodes
-                    <button 
+                    <button
                         onClick={() => setTraceHighlight(null)}
                         className="ml-2 hover:text-white"
                     >
@@ -291,7 +342,53 @@ export default function App() {
                     </button>
                  </div>
              )}
-            <button 
+
+            {/* Export Menu */}
+            {analysis && (
+              <div className="relative" ref={exportMenuRef}>
+                <button
+                  onClick={() => setShowExportMenu(!showExportMenu)}
+                  className="flex items-center gap-2 px-4 py-2 bg-neutral-800 text-white text-xs font-bold rounded hover:bg-neutral-700 transition-colors"
+                >
+                  <Download size={14} />
+                  EXPORT
+                </button>
+
+                {showExportMenu && (
+                  <div className="absolute top-full right-0 mt-2 w-48 bg-neutral-900 border border-neutral-800 rounded-lg shadow-2xl overflow-hidden z-50 animate-in fade-in zoom-in-95 duration-200">
+                    <button
+                      onClick={() => {
+                        exportAsJSON(analysis);
+                        setShowExportMenu(false);
+                      }}
+                      className="w-full px-4 py-2 text-left text-xs text-neutral-300 hover:bg-neutral-800 hover:text-white transition-colors"
+                    >
+                      Export as JSON
+                    </button>
+                    <button
+                      onClick={() => {
+                        exportAsMarkdown(analysis);
+                        setShowExportMenu(false);
+                      }}
+                      className="w-full px-4 py-2 text-left text-xs text-neutral-300 hover:bg-neutral-800 hover:text-white transition-colors"
+                    >
+                      Export as Markdown
+                    </button>
+                    <button
+                      onClick={() => {
+                        exportAsTextReport(analysis);
+                        setShowExportMenu(false);
+                      }}
+                      className="w-full px-4 py-2 text-left text-xs text-neutral-300 hover:bg-neutral-800 hover:text-white transition-colors"
+                    >
+                      Export as Text Report
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <button
               onClick={runAnalysis}
               disabled={isAnalyzing}
               className="flex items-center gap-2 px-5 py-2 bg-white text-black text-xs font-bold rounded hover:bg-neutral-200 disabled:opacity-50 transition-colors"
@@ -302,23 +399,53 @@ export default function App() {
           </div>
         </div>
 
+        {/* Security Alert Banner */}
+        {securityMetrics && securityMetrics.orphanedFunctions.length > 0 && (
+          <div className="px-6 py-3 bg-yellow-900/30 border-b border-yellow-500/30 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="text-yellow-500 text-xl">⚠️</div>
+              <div>
+                <div className="text-xs font-bold text-yellow-200">
+                  SECURITY ALERT: {securityMetrics.orphanedFunctions.length} Orphaned Function{securityMetrics.orphanedFunctions.length > 1 ? 's' : ''} Detected
+                </div>
+                <div className="text-[10px] text-yellow-300/70 mt-0.5">
+                  These functions have no clear purpose mapping and may indicate code slop or hidden vulnerabilities
+                </div>
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="text-[10px] text-yellow-400 font-mono">INTENT SCORE</div>
+              <div className={`text-2xl font-bold ${securityMetrics.score >= 80 ? 'text-green-400' : securityMetrics.score >= 50 ? 'text-yellow-400' : 'text-red-400'}`}>
+                {securityMetrics.score}%
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Graph Area */}
         <div className="flex-1 bg-[radial-gradient(#1a1a1a_1px,transparent_1px)] [background-size:16px_16px] relative">
-          <GraphView 
-            data={analysis} 
+          <GraphView
+            data={analysis}
             mode={viewMode}
             onNodeClick={handleNodeClick}
             traceHighlight={traceHighlight}
           />
-          
+
           {/* Overlay HUD Elements for aesthetics */}
           <div className="absolute bottom-4 left-4 pointer-events-none">
              <div className="flex flex-col gap-1 text-[10px] font-mono text-neutral-600">
                 <div className="flex items-center gap-2">
-                   <div className="w-2 h-2 bg-green-500 rounded-full"></div> SYSTEM STATUS: NORMAL
+                   <div className={`w-2 h-2 rounded-full ${securityMetrics && securityMetrics.score >= 80 ? 'bg-green-500' : 'bg-yellow-500'}`}></div> SYSTEM STATUS: {securityMetrics && securityMetrics.score >= 80 ? 'NORMAL' : 'REVIEW REQUIRED'}
                 </div>
                 <div>MEM: 2048MB OK</div>
                 <div>JARVIS: CONNECTED</div>
+                {securityMetrics && (
+                  <div className="mt-1 pt-1 border-t border-neutral-800">
+                    <div>INTENTS: {securityMetrics.intents}</div>
+                    <div>FUNCTIONS: {securityMetrics.totalFunctions}</div>
+                    <div>ORPHANED: {securityMetrics.orphanedFunctions.length}</div>
+                  </div>
+                )}
              </div>
           </div>
         </div>

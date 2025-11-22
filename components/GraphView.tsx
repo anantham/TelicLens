@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { AnalysisResult, GraphNode, GraphEdge, ViewMode, TraceResult } from '../types';
+import { ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
 
 interface GraphViewProps {
   data: AnalysisResult | null;
@@ -15,6 +16,10 @@ const getNodeRadius = (type: string) => {
 
 export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, traceHighlight }) => {
   const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>({});
+  const [viewBox, setViewBox] = useState({ x: 0, y: 0, width: 800, height: 600 });
+  const [isPanning, setIsPanning] = useState(false);
+  const [panStart, setPanStart] = useState({ x: 0, y: 0 });
+  const svgRef = useRef<SVGSVGElement>(null);
 
   // Simple auto-layout algorithm
   useEffect(() => {
@@ -91,15 +96,139 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
     setPositions(newPositions);
   }, [data, mode]);
 
+  // Reset viewBox when mode changes
+  useEffect(() => {
+    setViewBox({ x: 0, y: 0, width: 800, height: 600 });
+  }, [mode]);
+
+  // Zoom handlers
+  const handleZoom = (direction: 'in' | 'out') => {
+    setViewBox(prev => {
+      const factor = direction === 'in' ? 0.8 : 1.25;
+      const newWidth = prev.width * factor;
+      const newHeight = prev.height * factor;
+      const dx = (newWidth - prev.width) / 2;
+      const dy = (newHeight - prev.height) / 2;
+      return {
+        x: prev.x - dx,
+        y: prev.y - dy,
+        width: newWidth,
+        height: newHeight
+      };
+    });
+  };
+
+  const handleReset = () => {
+    setViewBox({ x: 0, y: 0, width: 800, height: 600 });
+  };
+
+  // Recenter to specific node
+  const handleRecenter = (node: GraphNode) => {
+    const pos = positions[node.id];
+    if (!pos) return;
+
+    setViewBox(prev => ({
+      x: pos.x - prev.width / 2,
+      y: pos.y - prev.height / 2,
+      width: prev.width,
+      height: prev.height
+    }));
+  };
+
+  // Mouse wheel zoom
+  const handleWheel = (e: React.WheelEvent<SVGSVGElement>) => {
+    e.preventDefault();
+    const direction = e.deltaY > 0 ? 'out' : 'in';
+    handleZoom(direction);
+  };
+
+  // Pan handlers
+  const handleMouseDown = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (e.button === 0 && e.target === svgRef.current) { // Left click on SVG background
+      setIsPanning(true);
+      setPanStart({ x: e.clientX, y: e.clientY });
+      e.preventDefault();
+    }
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (!isPanning) return;
+
+    const dx = e.clientX - panStart.x;
+    const dy = e.clientY - panStart.y;
+
+    const svg = svgRef.current;
+    if (!svg) return;
+
+    const CTM = svg.getScreenCTM();
+    if (!CTM) return;
+
+    const scaleFactor = viewBox.width / svg.clientWidth;
+
+    setViewBox(prev => ({
+      ...prev,
+      x: prev.x - dx * scaleFactor,
+      y: prev.y - dy * scaleFactor
+    }));
+
+    setPanStart({ x: e.clientX, y: e.clientY });
+  };
+
+  const handleMouseUp = () => {
+    setIsPanning(false);
+  };
+
   if (!data) return <div className="flex items-center justify-center h-full text-neutral-500 font-mono text-sm animate-pulse">AWAITING CODEBASE...</div>;
 
   return (
     <div className="relative w-full h-full overflow-hidden bg-neutral-950 rounded-xl border border-neutral-800 shadow-2xl">
+      {/* Mode Badge */}
       <div className="absolute top-4 right-4 px-3 py-1 bg-black/80 backdrop-blur-sm text-[10px] font-bold tracking-widest text-neutral-500 rounded border border-neutral-800 pointer-events-none uppercase z-10">
         MODE: {mode}
       </div>
-      
-      <svg className="w-full h-full select-none" viewBox="0 0 800 600" preserveAspectRatio="xMidYMid meet">
+
+      {/* Zoom Controls */}
+      <div className="absolute top-4 left-4 flex flex-col gap-2 z-10">
+        <button
+          onClick={() => handleZoom('in')}
+          className="p-2 bg-black/80 hover:bg-neutral-800 backdrop-blur-sm text-neutral-400 hover:text-white rounded border border-neutral-800 transition-colors"
+          title="Zoom In (or use mouse wheel)"
+        >
+          <ZoomIn size={16} />
+        </button>
+        <button
+          onClick={() => handleZoom('out')}
+          className="p-2 bg-black/80 hover:bg-neutral-800 backdrop-blur-sm text-neutral-400 hover:text-white rounded border border-neutral-800 transition-colors"
+          title="Zoom Out (or use mouse wheel)"
+        >
+          <ZoomOut size={16} />
+        </button>
+        <button
+          onClick={handleReset}
+          className="p-2 bg-black/80 hover:bg-neutral-800 backdrop-blur-sm text-neutral-400 hover:text-white rounded border border-neutral-800 transition-colors"
+          title="Reset View"
+        >
+          <Maximize2 size={16} />
+        </button>
+      </div>
+
+      {/* Instruction Hint */}
+      <div className="absolute bottom-4 right-4 px-3 py-1 bg-black/60 backdrop-blur-sm text-[9px] text-neutral-600 rounded border border-neutral-800 pointer-events-none z-10">
+        💡 Mouse wheel to zoom • Drag to pan • Double-click node to recenter
+      </div>
+
+      <svg
+        ref={svgRef}
+        className="w-full h-full select-none"
+        viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`}
+        preserveAspectRatio="xMidYMid meet"
+        onWheel={handleWheel}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+        style={{ cursor: isPanning ? 'grabbing' : 'grab' }}
+      >
         <defs>
           {/* Standard Gray Arrow (Causal/Dependency) */}
           <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
@@ -254,11 +383,12 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
           const filter = isIntent && mode === ViewMode.TELIC ? "url(#glow-purple)" : undefined;
 
           return (
-            <g 
-              key={node.id} 
-              transform={`translate(${pos.x}, ${pos.y})`} 
+            <g
+              key={node.id}
+              transform={`translate(${pos.x}, ${pos.y})`}
               className="cursor-pointer transition-all duration-300 group"
               onClick={() => onNodeClick(node)}
+              onDoubleClick={() => handleRecenter(node)}
               style={{ opacity }}
             >
               {/* Glow effect behind node */}
