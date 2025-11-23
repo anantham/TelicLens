@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { CodeFile, GraphNode, AnalysisResult, SourceLocation } from '../types';
+import { CodeFile, GraphNode, AnalysisResult, SourceLocation, TraceMode } from '../types';
 import { FileText, Box, Target, Upload, Code, Info, Network, FolderOpen } from 'lucide-react';
 
 interface SidebarProps {
@@ -10,7 +10,7 @@ interface SidebarProps {
   setSidebarMode: (mode: 'CODE' | 'DETAILS') => void;
   onFileUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onSelectFile: (file: CodeFile) => void;
-  onTrace: (snippet: string) => void;
+  onTrace: (snippet: string, mode: TraceMode) => void;
   isTracing: boolean;
   highlightedText: string | null;
   analysis: AnalysisResult | null;
@@ -47,6 +47,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   // Drag & Drop state
   const [isDragging, setIsDragging] = useState(false);
   const [dragCounter, setDragCounter] = useState(0);
+  const [traceMode, setTraceMode] = useState<TraceMode>('data');
 
   const currentLocation = locationNavigator ? locationNavigator.locations[locationNavigator.currentIndex] : null;
   const safeFileName = activeFile ? activeFile.name.replace(/[^a-zA-Z0-9_-]/g, '-') : '';
@@ -139,7 +140,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <button 
                 onClick={(e) => {
                     e.stopPropagation();
-                    onTrace(selectedText);
+                    onTrace(selectedText, traceMode);
                     setSelectedText('');
                     setSelectionRect(null);
                     window.getSelection()?.removeAllRanges();
@@ -147,7 +148,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded shadow-xl border border-blue-400"
             >
                 <Network size={12} />
-                TRACE FLOW
+                {traceMode === 'journey' ? 'TRACE JOURNEY' : 'TRACE FLOW'}
             </button>
         </div>
       )}
@@ -158,7 +159,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
           <h1 className="text-lg font-bold text-white tracking-wider">TELIC<span className="text-neutral-500">LENS</span></h1>
         </div>
-        <p className="text-xs text-neutral-500">AI Intention Inspector</p>
+        <p className="text-xs text-neutral-500">AI Flow & Journey Inspector</p>
+      </div>
+
+      {/* Trace Mode Toggle */}
+      <div className="flex items-center gap-2 px-4 py-2 border-b border-neutral-800 bg-neutral-950/60">
+        <span className="text-[10px] text-neutral-500 uppercase font-semibold">Trace Mode</span>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setTraceMode('data')}
+            className={`px-2 py-1 text-[10px] rounded border ${traceMode === 'data' ? 'border-blue-500 text-blue-200 bg-blue-900/30' : 'border-neutral-700 text-neutral-400 hover:border-neutral-500'}`}
+          >
+            Data Flow
+          </button>
+          <button
+            onClick={() => setTraceMode('journey')}
+            className={`px-2 py-1 text-[10px] rounded border ${traceMode === 'journey' ? 'border-green-500 text-green-200 bg-green-900/30' : 'border-neutral-700 text-neutral-400 hover:border-neutral-500'}`}
+          >
+            User Journey
+          </button>
+        </div>
       </div>
 
       {/* Tab Switcher */}

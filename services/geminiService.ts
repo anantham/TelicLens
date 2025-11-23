@@ -340,7 +340,8 @@ export const traceCodeSelection = async (
   codeSnippet: string,
   fileName: string,
   currentGraph: AnalysisResult,
-  model: string = 'gemini-2.5-pro'
+  model: string = 'gemini-2.5-pro',
+  mode: 'data' | 'journey' = 'data'
 ): Promise<TraceResult> => {
   // Generate a simple graph ID for cache key
   const graphId = currentGraph.nodes.map(n => n.id).join(',').substring(0, 50);
@@ -379,13 +380,18 @@ export const traceCodeSelection = async (
     ${codeSnippet}
     \`\`\`
 
+    ## Mode
+    The user chose trace mode: "${mode}".
+
+    - If mode = "data": focus on data/control flow between functions/data/files. Return nodes/edges/paths showing how data moves and transforms.
+    - If mode = "journey": focus on user journey / state transitions. Return nodes/edges/paths that describe an ordered journey (states/screens/actions), including branches/conditions, and the purposes they serve.
+
     ## Task
-    Perform a comprehensive flow trace to identify:
+    Perform a comprehensive trace to identify:
     1. **Direct nodes**: Nodes explicitly mentioned or called in the snippet
-    2. **Upstream nodes**: Functions/data that lead TO this code (dependencies)
-    3. **Downstream nodes**: Functions/data that are affected BY this code (dependents)
-    4. **Intent nodes**: What high-level purposes does this code serve?
-    5. **Paths**: Ordered sequences of node IDs showing data/control flow (source → ... → sink)
+    2. **Upstream nodes**: Dependencies leading TO this code
+    3. **Downstream nodes**: Components affected BY this code
+    4. **Paths**: Ordered sequences of node IDs showing the flow (source → ... → sink)
 
     ## Output
     Return a JSON object with:

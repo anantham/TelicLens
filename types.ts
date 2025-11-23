@@ -59,3 +59,5 @@ export interface TraceResult {
   paths?: string[][]; // Optional ordered node-id paths showing flow
   explanation: string;
 }
+
+export type TraceMode = 'data' | 'journey';

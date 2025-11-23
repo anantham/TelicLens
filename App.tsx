@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { GraphView } from './components/GraphView';
 import { analyzeCodebase, traceCodeSelection } from './services/geminiService';
-import { CodeFile, AnalysisResult, ViewMode, GraphNode, TraceResult, SourceLocation } from './types';
+import { CodeFile, AnalysisResult, ViewMode, GraphNode, TraceResult, SourceLocation, TraceMode } from './types';
 import { Activity, Target, Loader2, Play, Network, Download, Settings } from 'lucide-react';
 import { exportAsJSON, exportAsTextReport, exportAsMarkdown } from './utils/export';
 import { getEstimatedTime, saveAnalysisMetric } from './utils/analysisMetrics';
@@ -389,12 +389,12 @@ export default function App() {
     }
   };
 
-  const handleTrace = async (snippet: string) => {
+  const handleTrace = async (snippet: string, mode: TraceMode = 'data') => {
       if (!analysis || !activeFile) return;
       setIsTracing(true);
 
       try {
-          const result = await traceCodeSelection(snippet, activeFile.name, analysis, selectedModel);
+          const result = await traceCodeSelection(snippet, activeFile.name, analysis, selectedModel, mode);
           setTraceHighlight(result);
           // Auto switch to graph visualization to show result
           setViewMode(ViewMode.CAUSAL);
