@@ -151,9 +151,10 @@ export function extractVariables(file: CodeFile): {
 
           // If there's an initializer, track the flow
           if (path.node.init && t.isIdentifier(path.node.init)) {
+            // Use scoped ID format to match node IDs: file:scope:name
             flows.push({
-              from: `${file.name}:${path.node.init.name}`,
-              to: `${file.name}:${path.node.id.name}`,
+              from: `${file.name}:${currentScope}:${path.node.init.name}`,
+              to: `${file.name}:${currentScope}:${path.node.id.name}`,
               type: 'assignment',
               reason: `${path.node.init.name} assigned to ${path.node.id.name}`,
             });
@@ -198,9 +199,10 @@ export function extractVariables(file: CodeFile): {
             parentFunction: currentScope,
           });
 
+          // Use scoped ID format to match node IDs: file:scope:name
           flows.push({
-            from: `${file.name}:${path.node.argument.name}`,
-            to: `${file.name}:return_${currentScope}`,
+            from: `${file.name}:${currentScope}:${path.node.argument.name}`,
+            to: `${file.name}:${currentScope}:return_${path.node.argument.name}`,
             type: 'return',
             reason: `${path.node.argument.name} returned from ${currentScope}`,
           });
@@ -209,10 +211,13 @@ export function extractVariables(file: CodeFile): {
 
       // Assignment expressions
       AssignmentExpression(path) {
+        const currentScope = scopeStack[scopeStack.length - 1];
+
         if (t.isIdentifier(path.node.left) && t.isIdentifier(path.node.right)) {
+          // Use scoped ID format to match node IDs: file:scope:name
           flows.push({
-            from: `${file.name}:${path.node.right.name}`,
-            to: `${file.name}:${path.node.left.name}`,
+            from: `${file.name}:${currentScope}:${path.node.right.name}`,
+            to: `${file.name}:${currentScope}:${path.node.left.name}`,
             type: 'assignment',
             reason: `${path.node.right.name} assigned to ${path.node.left.name}`,
           });

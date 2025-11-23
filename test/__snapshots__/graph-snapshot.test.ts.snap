@@ -50,9 +50,9 @@ exports[`Graph Structure Snapshots > should match safe-auth graph structure > sa
 
 exports[`Graph Structure Snapshots > should match vulnerable-auth graph structure > vulnerable-auth-issues 1`] = `
 {
-  "missingNodes": 2,
+  "missingNodes": 0,
   "orphanDefs": 1,
-  "orphanUses": 19,
+  "orphanUses": 18,
   "trustBoundaryViolations": 0,
   "unreachableFlows": 19,
 }
