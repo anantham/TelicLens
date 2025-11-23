@@ -473,20 +473,22 @@ export default function App() {
       const locations = collectLocationsForNode(node);
       if (locations.length > 0) {
           startLocationNavigator(locations, node);
+          setViewMode(ViewMode.CAUSAL);
           return;
       }
 
       // Try to show relevant code in the sidebar if no location metadata is available
-      if (node.type === 'file') {
-          // Find the file by name
-          const matchingFile = files.find(f => f.name === node.label);
-          if (matchingFile) {
-              setActiveFile(matchingFile);
-              setSidebarMode('CODE');
-              console.log(`📄 Opened file: ${node.label}`);
-              return;
-          }
-      } else if (node.type === 'function') {
+          if (node.type === 'file') {
+              // Find the file by name
+              const matchingFile = files.find(f => f.name === node.label);
+              if (matchingFile) {
+                  setActiveFile(matchingFile);
+                  setSidebarMode('CODE');
+                  console.log(`📄 Opened file: ${node.label}`);
+                  setViewMode(ViewMode.CAUSAL);
+                  return;
+              }
+          } else if (node.type === 'function') {
           // Search for the function name in all files
           const functionName = node.label.replace(/\(\)$/, ''); // Remove trailing ()
           for (const file of files) {
@@ -504,14 +506,20 @@ export default function App() {
                   setSidebarMode('CODE');
                   setHighlightedText(functionName); // Highlight the function name
                   console.log(`🔍 Found function "${functionName}" in ${file.name}`);
+                  setViewMode(ViewMode.CAUSAL);
                   return;
               }
           }
-          console.log(`⚠️ Function "${functionName}" not found in loaded files`);
+          // Not found in files: fall back to details + graph view
+          setActiveFile(null);
+          setSidebarMode('DETAILS');
+          setViewMode(ViewMode.CAUSAL);
+          return;
       }
 
       // Default: show details view if no code found
       setSidebarMode('DETAILS');
+      setViewMode(ViewMode.CAUSAL);
   };
 
   const handleFileSelect = (file: CodeFile) => {
@@ -764,6 +772,7 @@ export default function App() {
                   onClick={() => {
                     const firstOrphan = securityMetrics.orphanedFunctions[0];
                     if (firstOrphan) {
+                      setViewMode(ViewMode.CAUSAL);
                       handleNodeClick(firstOrphan);
                     }
                   }}
