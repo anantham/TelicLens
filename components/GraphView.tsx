@@ -27,6 +27,7 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
   const containerRef = useRef<HTMLDivElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [hoveredEdge, setHoveredEdge] = useState<{ edge: GraphEdge; midX: number; midY: number } | null>(null);
+  const [hoveredNode, setHoveredNode] = useState<{ node: GraphNode; x: number; y: number } | null>(null);
 
   // Dagre-based auto layout to reduce crossings
   const computeLayout = useCallback(() => {
@@ -666,6 +667,8 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
               onMouseDown={(e) => handleNodeMouseDown(e, node)}
               onClick={() => onNodeClick(node)}
               onDoubleClick={() => handleRecenter(node)}
+              onMouseEnter={() => setHoveredNode({ node, x: pos.x, y: pos.y })}
+              onMouseLeave={() => setHoveredNode(null)}
               style={{ opacity }}
             >
               {/* Glow effect behind node */}
@@ -707,6 +710,30 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
             </g>
           );
         })}
+
+        {/* Node hover popover */}
+        {hoveredNode && (
+          <g transform={`translate(${hoveredNode.x}, ${hoveredNode.y - 40})`} className="pointer-events-none">
+            <rect
+              x={-90}
+              y={-30}
+              width={180}
+              height={48}
+              rx={6}
+              fill="#0f172a"
+              stroke="#475569"
+              opacity="0.95"
+            />
+            <text textAnchor="middle" dy="-6" fill="#e2e8f0" fontSize="10" className="font-mono">
+              {hoveredNode.node.label}
+            </text>
+            {hoveredNode.node.description && (
+              <text textAnchor="middle" dy="10" fill="#94a3b8" fontSize="8" className="font-mono">
+                {hoveredNode.node.description.slice(0, 60)}
+              </text>
+            )}
+          </g>
+        )}
       </svg>
     </div>
   );
