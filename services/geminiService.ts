@@ -9,21 +9,23 @@ if (!apiKey) {
 
 const ai = new GoogleGenAI({ apiKey });
 
+// Simple deterministic hash over full string content (32-bit FNV-1a)
+const hashString = (input: string): string => {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16);
+};
+
 // Cache utility functions
 const generateCacheKey = (files: { name: string; content: string }[]): string => {
-  // Create a simple hash from file names and content lengths
+  // Create a hash from file names and FULL content so any change invalidates cache
   const signature = files
-    .map(f => `${f.name}:${f.content.length}:${f.content.substring(0, 100)}`)
+    .map(f => `${f.name}:${f.content.length}:${hashString(f.content)}`)
     .join('|');
-
-  // Simple hash function
-  let hash = 0;
-  for (let i = 0; i < signature.length; i++) {
-    const char = signature.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // Convert to 32-bit integer
-  }
-  return `analysis_${Math.abs(hash).toString(36)}`;
+  return `analysis_${hashString(signature)}`;
 };
 
 const getCachedAnalysis = (cacheKey: string): AnalysisResult | null => {
