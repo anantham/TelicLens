@@ -65,3 +65,5 @@ export interface TraceResult {
 }
 
 export type TraceMode = 'data' | 'journey';
+
+export type FileUpdateHandler = (fileName: string, newContent: string) => void;

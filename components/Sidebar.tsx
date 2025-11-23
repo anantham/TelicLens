@@ -17,12 +17,13 @@ interface SidebarProps {
   locationNavigator: {
     locations: SourceLocation[];
     currentIndex: number;
-  nodeContext: GraphNode;
-} | null;
-onNavigateNext: () => void;
-onNavigatePrevious: () => void;
-onCloseNavigator: () => void;
-showRiskLegend: boolean;
+    nodeContext: GraphNode;
+  } | null;
+  onNavigateNext: () => void;
+  onNavigatePrevious: () => void;
+  onCloseNavigator: () => void;
+  showRiskLegend: boolean;
+  onUpdateFile: (fileName: string, newContent: string) => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -41,7 +42,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onNavigateNext,
   onNavigatePrevious,
   onCloseNavigator,
-  showRiskLegend
+  showRiskLegend,
+  onUpdateFile
 }) => {
   const [selectedText, setSelectedText] = useState('');
   const [selectionRect, setSelectionRect] = useState<{top: number, left: number} | null>(null);
@@ -49,6 +51,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
   // Drag & Drop state
   const [isDragging, setIsDragging] = useState(false);
   const [dragCounter, setDragCounter] = useState(0);
+  const [isEditing, setIsEditing] = useState(false);
+  const [draftContent, setDraftContent] = useState<string>('');
+
+  useEffect(() => {
+    if (activeFile) {
+      setDraftContent(activeFile.content);
+    }
+  }, [activeFile]);
 
   const currentLocation = locationNavigator ? locationNavigator.locations[locationNavigator.currentIndex] : null;
   const safeFileName = activeFile ? activeFile.name.replace(/[^a-zA-Z0-9_-]/g, '-') : '';
@@ -193,6 +203,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <Code size={14} />
           SOURCE
         </button>
+        {sidebarMode === 'CODE' && activeFile && (
+          <button
+            onClick={() => setIsEditing(!isEditing)}
+            className="px-3 py-2 text-[10px] font-bold border-l border-neutral-800 text-neutral-300 hover:text-white"
+          >
+            {isEditing ? 'VIEW MODE' : 'EDIT MODE'}
+          </button>
+        )}
       </div>
 
       {/* Main Content Area */}
@@ -381,46 +399,78 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     )}
 
                     <div className="p-4">
-                      <code className="font-mono text-xs text-neutral-300 block pb-12">
-                          {activeFile.content.split('\n').map((line, i) => {
-                              const lineNumber = i + 1;
-                              const inLocationRange = currentLocation
-                                && activeFile.name === currentLocation.file
-                                && lineNumber >= currentLocation.startLine
-                                && lineNumber <= currentLocation.endLine;
-                              const shouldShowComment = currentLocation
-                                && activeFile.name === currentLocation.file
-                                && currentLocation.aiComment
-                                && lineNumber === currentLocation.startLine;
+                      {isEditing && activeFile ? (
+                        <div className="space-y-2">
+                          <textarea
+                            value={draftContent}
+                            onChange={(e) => setDraftContent(e.target.value)}
+                            className="w-full h-[60vh] bg-neutral-900 text-neutral-100 font-mono text-xs border border-neutral-800 rounded p-3 focus:outline-none focus:border-blue-500"
+                          />
+                          <div className="flex justify-end gap-2">
+                            <button
+                              onClick={() => {
+                                setIsEditing(false);
+                                if (activeFile) setDraftContent(activeFile.content);
+                              }}
+                              className="px-3 py-1 text-[10px] bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded border border-neutral-700"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              onClick={() => {
+                                if (activeFile) {
+                                  onUpdateFile(activeFile.name, draftContent);
+                                  setIsEditing(false);
+                                }
+                              }}
+                              className="px-3 py-1 text-[10px] bg-blue-700 hover:bg-blue-600 text-white rounded border border-blue-500"
+                            >
+                              Save
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <code className="font-mono text-xs text-neutral-300 block pb-12">
+                            {activeFile.content.split('\n').map((line, i) => {
+                                const lineNumber = i + 1;
+                                const inLocationRange = currentLocation
+                                  && activeFile.name === currentLocation.file
+                                  && lineNumber >= currentLocation.startLine
+                                  && lineNumber <= currentLocation.endLine;
+                                const shouldShowComment = currentLocation
+                                  && activeFile.name === currentLocation.file
+                                  && currentLocation.aiComment
+                                  && lineNumber === currentLocation.startLine;
 
-                              const textHighlighted = highlightedText && line.includes(highlightedText);
-                              const showHighlight = inLocationRange || textHighlighted;
+                                const textHighlighted = highlightedText && line.includes(highlightedText);
+                                const showHighlight = inLocationRange || textHighlighted;
 
-                              return (
-                                <React.Fragment key={i}>
-                                  {shouldShowComment && (
-                                    <div className="flex min-w-fit bg-blue-900/20 border-l-2 border-blue-500/70 px-3 py-2 mb-1">
-                                      <span className="text-neutral-600 select-none w-8 text-right pr-3 flex-shrink-0">//</span>
-                                      <div className="whitespace-pre-wrap text-[11px] text-blue-100 leading-snug">
-                                        <div className="font-semibold text-blue-200">TelicLens: {locationNavigator?.nodeContext.label}</div>
-                                        <div>{currentLocation.aiComment}</div>
+                                return (
+                                  <React.Fragment key={i}>
+                                    {shouldShowComment && (
+                                      <div className="flex min-w-fit bg-blue-900/20 border-l-2 border-blue-500/70 px-3 py-2 mb-1">
+                                        <span className="text-neutral-600 select-none w-8 text-right pr-3 flex-shrink-0">//</span>
+                                        <div className="whitespace-pre-wrap text-[11px] text-blue-100 leading-snug">
+                                          <div className="font-semibold text-blue-200">TelicLens: {locationNavigator?.nodeContext.label}</div>
+                                          <div>{currentLocation.aiComment}</div>
+                                        </div>
                                       </div>
-                                    </div>
-                                  )}
+                                    )}
 
-                                  <div
-                                      id={`code-line-${safeFileName}-${lineNumber}`}
-                                      className={`flex hover:bg-neutral-800/50 min-w-fit ${
-                                          showHighlight ? 'bg-yellow-900/30 border-l-2 border-yellow-500' : ''
-                                      }`}
-                                  >
-                                      <span className="text-neutral-600 select-none w-8 text-right pr-3 flex-shrink-0">{lineNumber}</span>
-                                      <span className="whitespace-pre">{line}</span>
-                                  </div>
-                                </React.Fragment>
-                              );
-                          })}
-                      </code>
+                                    <div
+                                        id={`code-line-${safeFileName}-${lineNumber}`}
+                                        className={`flex hover:bg-neutral-800/50 min-w-fit ${
+                                            showHighlight ? 'bg-yellow-900/30 border-l-2 border-yellow-500' : ''
+                                        }`}
+                                    >
+                                        <span className="text-neutral-600 select-none w-8 text-right pr-3 flex-shrink-0">{lineNumber}</span>
+                                        <span className="whitespace-pre">{line}</span>
+                                    </div>
+                                  </React.Fragment>
+                                );
+                            })}
+                        </code>
+                      )}
                     </div>
                  </div>
                  {isTracing && (

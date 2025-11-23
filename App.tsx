@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { GraphView } from './components/GraphView';
 import { analyzeCodebase, traceCodeSelection, clearAnalysisCache } from './services/geminiService';
-import { CodeFile, AnalysisResult, ViewMode, GraphNode, TraceResult, SourceLocation, TraceMode } from './types';
+import { CodeFile, AnalysisResult, ViewMode, GraphNode, TraceResult, SourceLocation, TraceMode, FileUpdateHandler } from './types';
 import { Activity, Target, Loader2, Play, Network, Download, Settings } from 'lucide-react';
 import { exportAsJSON, exportAsTextReport, exportAsMarkdown } from './utils/export';
 import { getEstimatedTime, saveAnalysisMetric, getEstimatedTraceTime, saveTraceMetric } from './utils/analysisMetrics';
@@ -587,6 +587,14 @@ export default function App() {
       setSidebarMode('CODE');
   };
 
+  // Update file content (for in-app editing)
+  const handleUpdateFile: FileUpdateHandler = (fileName, newContent) => {
+      setFiles(prev => prev.map(f => f.name === fileName ? { ...f, content: newContent } : f));
+      if (activeFile && activeFile.name === fileName) {
+          setActiveFile({ ...activeFile, content: newContent });
+      }
+  };
+
   // Calculate security metrics
   const getSecurityMetrics = () => {
     if (!analysis) return null;
@@ -639,6 +647,7 @@ export default function App() {
         onNavigatePrevious={navigatePrevious}
         onCloseNavigator={closeNavigator}
         showRiskLegend={showRiskLegend}
+        onUpdateFile={handleUpdateFile}
       />
 
       {/* Main Content */}
