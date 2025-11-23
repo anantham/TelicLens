@@ -50,6 +50,7 @@ export interface AnalysisResult {
     orphanNodes?: string[];      // nodes/intents without path to root telos
     contradictions?: string[];   // edges/nodes that undermine parent intent
     closedLoops?: string[][];    // cycles that never reach root telos
+    suspiciousCapture?: string[]; // nodes doing data capture/telemetry without serving telos
   };
 }
 

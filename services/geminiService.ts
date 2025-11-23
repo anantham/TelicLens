@@ -224,8 +224,9 @@ export const analyzeCodebase = async (files: { name: string; content: string }[]
     - Return rootIntents (1-3 top-level intents).
     - Provide a telicAudit:
       * orphanNodes: intents/functions with NO path to a root intent
-      * contradictions: nodes/edges that **undermine** their parent telos
+      * contradictions: nodes/edges that **undermine** their parent telos (use "source->target" edge keys or node IDs)
       * closedLoops: cycles of intents that never reach a root intent
+      * suspiciousCapture: nodes collecting data without serving root telos (exfiltration/phishing/telemetry without purpose)
 
     **Summary**: Provide an executive summary that highlights:
     - Overall system purpose and root telos

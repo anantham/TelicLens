@@ -11,9 +11,9 @@ interface GraphViewProps {
 }
 
 // Helper to get node radius based on type
-const getNodeRadius = (type: string) => {
-    return type === 'intent' ? 35 : 25;
-};
+  const getNodeRadius = (type: string) => {
+      return type === 'intent' ? 35 : 25;
+  };
 
 export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, traceHighlight }) => {
   const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>({});
@@ -23,6 +23,7 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
   const [draggingNode, setDraggingNode] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState<{ dx: number; dy: number }>({ dx: 0, dy: 0 });
   const svgRef = useRef<SVGSVGElement>(null);
+  const [showRiskOverlay, setShowRiskOverlay] = useState(true);
 
   // Dagre-based auto layout to reduce crossings
   const computeLayout = useCallback(() => {
@@ -220,6 +221,22 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
     setIsPanning(false);
   };
 
+  // Risk highlighting sets
+  const riskSets = useMemo(() => {
+    const orphanIds = new Set<string>(data?.telicAudit?.orphanNodes || []);
+    const suspiciousIds = new Set<string>(data?.telicAudit?.suspiciousCapture || []);
+    const contradictionEdgeIds = new Set<string>();
+    (data?.telicAudit?.contradictions || []).forEach(item => {
+      if (item.includes('->')) {
+        contradictionEdgeIds.add(item);
+      } else {
+        // could be node id
+        suspiciousIds.add(item);
+      }
+    });
+    return { orphanIds, suspiciousIds, contradictionEdgeIds };
+  }, [data]);
+
   if (!data) return <div className="flex items-center justify-center h-full text-neutral-500 font-mono text-sm animate-pulse">AWAITING CODEBASE...</div>;
 
   return (
@@ -228,6 +245,30 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
       <div className="absolute top-4 right-4 px-3 py-1 bg-black/80 backdrop-blur-sm text-[10px] font-bold tracking-widest text-neutral-500 rounded border border-neutral-800 pointer-events-none uppercase z-10">
         MODE: {mode}
       </div>
+
+      {/* Risk Legend */}
+      {showRiskOverlay && (
+        <div className="absolute top-4 right-24 px-3 py-2 bg-black/80 backdrop-blur-sm text-[10px] text-neutral-200 rounded border border-red-500/40 z-10 space-y-1">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-red-500" />
+            <span>Undermines / Contradiction</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-red-300" />
+            <span>Orphaned</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-amber-400" />
+            <span>Suspicious Capture</span>
+          </div>
+          <button
+            onClick={() => setShowRiskOverlay(false)}
+            className="w-full mt-1 px-2 py-1 bg-neutral-800 text-[10px] rounded border border-neutral-700 hover:border-neutral-500"
+          >
+            Hide
+          </button>
+        </div>
+      )}
 
       {/* Zoom Controls */}
       <div className="absolute top-4 left-4 flex flex-col gap-2 z-10">
@@ -328,6 +369,8 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
           const isSupportsIntentEdge = edge.type === 'supports_intent';
           const isUnderminesIntentEdge = edge.type === 'undermines_intent';
           const isFlowEdge = edge.type === 'flow';
+          const edgeId = `${edge.source}->${edge.target}`;
+          const isContradiction = riskSets.contradictionEdgeIds.has(edgeId);
 
           let strokeColor = '#333';
           let markerId = 'url(#arrowhead)';
@@ -349,8 +392,15 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
              } else if (isUnderminesIntentEdge) {
                  strokeColor = '#ef4444'; // Red for conflicts
                  markerId = 'url(#arrowhead)';
-                 strokeWidth = 2;
+                 strokeWidth = 2.5;
                  opacity = 1;
+                 dashArray = '5,4';
+              } else if (isContradiction) {
+                 strokeColor = '#ef4444';
+                 markerId = 'url(#arrowhead)';
+                 strokeWidth = 2.5;
+                 opacity = 1;
+                 dashArray = '5,4';
              } else {
                  strokeColor = '#333';
                  opacity = 0.15; // Fade out non-telic edges
@@ -441,6 +491,8 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
           if (!pos) return null;
           
           const isIntent = node.type === 'intent';
+          const isOrphan = riskSets.orphanIds.has(node.id);
+          const isSuspicious = riskSets.suspiciousIds.has(node.id);
           const radius = getNodeRadius(node.type);
           
           // Colors
@@ -484,6 +536,11 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
 
           const filter = isIntent && mode === ViewMode.TELIC ? "url(#glow-purple)" : undefined;
 
+          // Risk styling
+          const nodeStroke = isSuspicious ? '#ef4444' : strokeColor;
+          const nodeFill = isOrphan ? '#1f2937' : fillColor;
+          const nodeStrokeWidth = isSuspicious ? 3 : (isIntent ? 2 : 1.5);
+
           return (
             <g
               key={node.id}
@@ -499,9 +556,9 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
               
               <circle 
                 r={radius} 
-                fill={fillColor} 
-                stroke={strokeColor} 
-                strokeWidth={isIntent ? 2 : 1.5} 
+                fill={nodeFill} 
+                stroke={nodeStroke} 
+                strokeWidth={nodeStrokeWidth} 
                 filter={filter}
                 className="transition-transform duration-200 group-hover:scale-105" 
               />
@@ -510,7 +567,7 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
               <text 
                   y={5} 
                   textAnchor="middle" 
-                  fill={isIntent ? "#e9d5ff" : "#d4d4d4"} 
+                  fill={isIntent ? "#e9d5ff" : (isSuspicious ? "#fca5a5" : "#d4d4d4")} 
                   fontSize={isIntent ? "10" : "9"} 
                   className="font-mono pointer-events-none font-semibold"
               >
@@ -524,8 +581,10 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
                 </text>
               )}
               {!isIntent && (
-                <text y={-radius - 5} textAnchor="middle" fill={strokeColor} fontSize="7" className="uppercase tracking-wider opacity-0 group-hover:opacity-100 transition-opacity">
+                <text y={-radius - 5} textAnchor="middle" fill={nodeStroke} fontSize="7" className="uppercase tracking-wider opacity-0 group-hover:opacity-100 transition-opacity">
                   {node.type}
+                  {isOrphan ? ' • ORPHAN' : ''}
+                  {isSuspicious ? ' • RISK' : ''}
                 </text>
               )}
             </g>
