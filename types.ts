@@ -37,13 +37,20 @@ export interface GraphEdge {
   source: string;
   target: string;
   label?: string;
-  type: 'dependency' | 'flow' | 'serves_intent' | 'supports_intent';
+  type: 'dependency' | 'flow' | 'serves_intent' | 'supports_intent' | 'undermines_intent';
+  role?: 'supports' | 'undermines'; // polarity for telic edges
 }
 
 export interface AnalysisResult {
   nodes: GraphNode[];
   edges: GraphEdge[];
   summary: string;
+  rootIntents?: string[]; // overarching telos entries
+  telicAudit?: {
+    orphanNodes?: string[];      // nodes/intents without path to root telos
+    contradictions?: string[];   // edges/nodes that undermine parent intent
+    closedLoops?: string[][];    // cycles that never reach root telos
+  };
 }
 
 export interface TraceResult {

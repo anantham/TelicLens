@@ -326,6 +326,7 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
           // Styling based on edge type
           const isTelicEdge = edge.type === 'serves_intent';
           const isSupportsIntentEdge = edge.type === 'supports_intent';
+          const isUnderminesIntentEdge = edge.type === 'undermines_intent';
           const isFlowEdge = edge.type === 'flow';
 
           let strokeColor = '#333';
@@ -345,13 +346,18 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
                  markerId = 'url(#arrowhead-telic)';
                  strokeWidth = 2;
                  opacity = 1;
+             } else if (isUnderminesIntentEdge) {
+                 strokeColor = '#ef4444'; // Red for conflicts
+                 markerId = 'url(#arrowhead)';
+                 strokeWidth = 2;
+                 opacity = 1;
              } else {
                  strokeColor = '#333';
                  opacity = 0.15; // Fade out non-telic edges
              }
           } else {
              // Causal Mode
-             if (isTelicEdge || isSupportsIntentEdge) {
+             if (isTelicEdge || isSupportsIntentEdge || isUnderminesIntentEdge) {
                  opacity = 0; // Hide all intent edges in causal mode
              } else if (isFlowEdge) {
                  strokeColor = '#3b82f6'; // Blue

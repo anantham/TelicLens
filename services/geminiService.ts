@@ -127,12 +127,11 @@ export const analyzeCodebase = async (files: { name: string; content: string }[]
         - Example: "Serves 'System Security' by verifying JWT signature before granting access"
 
     **For intent nodes:**
-    - Create a HIERARCHY of intents (both high-level and supporting intents)
-    - Top-level intents: Fundamental system goals (3-4 major intents like "System Security", "Data Integrity", "User Privacy")
-    - Supporting intents: Lower-level goals that serve higher intents (e.g., "Authenticate Users" serves "System Security")
+    - Declare 1-3 ROOT TELOS entries (rootIntents) that represent the system's overarching goals.
+    - Build a HIERARCHY: supporting intents must connect upward to a root intent via supports_intent edges.
     - Use imperative language: "Authenticate Users", "Prevent Fraud", "Maintain Data Consistency"
 
-    **Edges**: Create FOUR types with **RICH, INVESTIGATIVE labels** (see examples below):
+    **Edges**: Create FIVE types with **RICH, INVESTIGATIVE labels** (see examples below):
     - 'dependency': Function A calls Function B
       * Label format: "WHY → WHAT" (reason for call → data passed)
       * Examples:
@@ -151,7 +150,7 @@ export const analyzeCodebase = async (files: { name: string; content: string }[]
         - "validates format → email_address"
         - "user_id, session_token" (simple data passing)
 
-    - 'serves_intent': Function/Data serves this system-level intent
+    - 'serves_intent': Function/Data serves this system-level intent (POSITIVE)
       * Label: HOW it serves the intent (mechanism)
       * Examples:
         - "verifies JWT signature" (for "Authenticate Users")
@@ -159,12 +158,16 @@ export const analyzeCodebase = async (files: { name: string; content: string }[]
         - "encrypts at rest" (for "Protect Privacy")
         - "enforces ACID properties" (for "Data Integrity")
 
-    - 'supports_intent': Lower-level intent supports a higher-level intent
+    - 'supports_intent': Lower-level intent supports a higher-level intent (POSITIVE polarity)
       * Label: HOW the supporting intent contributes
       * Examples:
         - "by verifying identity before access"
         - "through continuous monitoring"
         - "via encryption at rest and in transit"
+
+    - 'undermines_intent': Code or intent that **conflicts with or erodes** the parent intent (NEGATIVE polarity)
+      * Label: HOW it undermines (e.g., "exfiltrates PII externally", "bypasses auth", "sends unencrypted data")
+      * Use when a function or sub-intent works against the higher telos
 
     **CRITICAL INVESTIGATIVE GUIDELINES**:
 
@@ -217,10 +220,18 @@ export const analyzeCodebase = async (files: { name: string; content: string }[]
     - Understand conditional logic (what happens on error paths?)
     - Find orphaned code (what is this code actually doing?)
 
+    **Root Telos & Audit**:
+    - Return rootIntents (1-3 top-level intents).
+    - Provide a telicAudit:
+      * orphanNodes: intents/functions with NO path to a root intent
+      * contradictions: nodes/edges that **undermine** their parent telos
+      * closedLoops: cycles of intents that never reach a root intent
+
     **Summary**: Provide an executive summary that highlights:
-    - Overall system purpose
-    - Key security intents
-    - Any suspicious patterns detected
+    - Overall system purpose and root telos
+    - How sub-intents support the root telos
+    - Suspicious/contradictory or orphaned components
+    - Security-sensitive data flows and external calls
 
     The output must strictly follow the JSON schema provided.
   `;
@@ -241,6 +252,15 @@ export const analyzeCodebase = async (files: { name: string; content: string }[]
           type: Type.OBJECT,
           properties: {
             summary: { type: Type.STRING, description: "A high level executive summary of what this system does." },
+            rootIntents: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Top-level telos intents" },
+            telicAudit: {
+              type: Type.OBJECT,
+              properties: {
+                orphanNodes: { type: Type.ARRAY, items: { type: Type.STRING } },
+                contradictions: { type: Type.ARRAY, items: { type: Type.STRING } },
+                closedLoops: { type: Type.ARRAY, items: { type: Type.ARRAY, items: { type: Type.STRING } } }
+              }
+            },
             nodes: {
               type: Type.ARRAY,
               items: {
@@ -275,7 +295,8 @@ export const analyzeCodebase = async (files: { name: string; content: string }[]
                   source: { type: Type.STRING },
                   target: { type: Type.STRING },
                   label: { type: Type.STRING },
-                  type: { type: Type.STRING, enum: ['dependency', 'flow', 'serves_intent', 'supports_intent'] }
+                  type: { type: Type.STRING, enum: ['dependency', 'flow', 'serves_intent', 'supports_intent', 'undermines_intent'] },
+                  role: { type: Type.STRING, description: "Polarity of telic edge", enum: ['supports', 'undermines'] }
                 },
                 required: ['source', 'target', 'type']
               }
@@ -425,6 +446,12 @@ export const traceCodeSelection = async (
 
 const mockAnalysis: AnalysisResult = {
   summary: "Aegis Payment Processor: A secure financial transaction system focusing on fraud prevention and atomic data persistence.",
+  rootIntents: ["System Security", "Financial Integrity", "User Privacy"],
+  telicAudit: {
+    orphanNodes: [],
+    contradictions: ["fn6->i3"],
+    closedLoops: []
+  },
   nodes: [
     // Files
     { id: "f1", label: "main.py", type: "file", description: "Orchestration layer for transactions" },
@@ -515,14 +542,16 @@ const mockAnalysis: AnalysisResult = {
     { source: "fn1", target: "fn6", type: "dependency", label: "sends to external endpoint → user_id, amount, payment_method" },
 
     // Telic (Intent Hierarchy - supporting → top-level)
-    { source: "i4", target: "i2", type: "supports_intent", label: "by verifying identity before access" },
-    { source: "i5", target: "i2", type: "supports_intent", label: "by detecting threats in real-time" },
-    { source: "i6", target: "i3", type: "supports_intent", label: "via encryption at rest and in transit" },
+    { source: "i4", target: "i2", type: "supports_intent", label: "by verifying identity before access", role: "supports" },
+    { source: "i5", target: "i2", type: "supports_intent", label: "by detecting threats in real-time", role: "supports" },
+    { source: "i6", target: "i3", type: "supports_intent", label: "via encryption at rest and in transit", role: "supports" },
 
     // Telic (Functions → Supporting Intents)
-    { source: "fn4", target: "i4", type: "serves_intent", label: "verifies JWT signature & expiry" },
-    { source: "fn2", target: "i5", type: "serves_intent", label: "runs ML model on transaction patterns" },
-    { source: "fn5", target: "i6", type: "serves_intent", label: "encrypts with AES-256-GCM" },
-    { source: "fn3", target: "i1", type: "serves_intent", label: "ensures ACID transaction properties" },
+    { source: "fn4", target: "i4", type: "serves_intent", label: "verifies JWT signature & expiry", role: "supports" },
+    { source: "fn2", target: "i5", type: "serves_intent", label: "runs ML model on transaction patterns", role: "supports" },
+    { source: "fn5", target: "i6", type: "serves_intent", label: "encrypts with AES-256-GCM", role: "supports" },
+    { source: "fn3", target: "i1", type: "serves_intent", label: "ensures ACID transaction properties", role: "supports" },
+    // Contradictory intent link example
+    { source: "fn6", target: "i3", type: "undermines_intent", label: "exfiltrates PII to external analytics", role: "undermines" },
   ]
 };
