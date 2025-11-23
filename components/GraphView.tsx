@@ -537,23 +537,16 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
 
               {/* Edge Label - only show in CAUSAL mode and if label exists */}
               {edge.label && mode === ViewMode.CAUSAL && !isTelicEdge && (
-                <g transform={`translate(${midX}, ${midY})`}>
-                  {/* Background rectangle for readability */}
-                  <rect
-                    x={-edge.label.length * 2.5}
-                    y={-8}
-                    width={edge.label.length * 5}
-                    height={14}
-                    fill="#000000"
-                    opacity="0.8"
-                    rx="2"
-                  />
+                <g transform={`translate(${midX}, ${midY})`} pointerEvents="none">
                   <text
                     textAnchor="middle"
                     dy="3"
                     fill={isFlowEdge ? "#60a5fa" : "#737373"}
+                    stroke="#000"
+                    strokeWidth="2"
+                    paintOrder="stroke"
                     fontSize="8"
-                    className="font-mono font-semibold pointer-events-none"
+                    className="font-mono font-semibold"
                     transform={`rotate(${normalizedAngle})`}
                   >
                     {edge.label}
