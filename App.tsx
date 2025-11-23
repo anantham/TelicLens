@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { GraphView } from './components/GraphView';
-import { analyzeCodebase, traceCodeSelection } from './services/geminiService';
+import { analyzeCodebase, traceCodeSelection, clearAnalysisCache } from './services/geminiService';
 import { CodeFile, AnalysisResult, ViewMode, GraphNode, TraceResult, SourceLocation, TraceMode } from './types';
 import { Activity, Target, Loader2, Play, Network, Download, Settings } from 'lucide-react';
 import { exportAsJSON, exportAsTextReport, exportAsMarkdown } from './utils/export';
@@ -649,6 +649,21 @@ export default function App() {
                   >
                     Gemini 3 Pro <span className="text-[10px] text-neutral-600">(Most Intelligent)</span>
                   </button>
+
+                  <div className="px-4 py-2 border-t border-neutral-800 bg-neutral-950 mt-1">
+                    <h3 className="text-xs font-bold text-neutral-400 mb-1">Cache</h3>
+                    <button
+                      onClick={() => {
+                        clearAnalysisCache();
+                        setAnalysis(null);
+                        setTraceHighlight(null);
+                        setShowSettingsMenu(false);
+                      }}
+                      className="w-full px-3 py-2 text-left text-xs bg-red-900/20 hover:bg-red-800/30 text-red-200 rounded border border-red-700/50 transition-colors"
+                    >
+                      Invalidate cache (force fresh analysis)
+                    </button>
+                  </div>
 
                   {/* Gemini 2.5 Models */}
                   <div className="px-2 py-1 bg-neutral-950/50 mt-1">

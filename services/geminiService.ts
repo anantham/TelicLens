@@ -54,6 +54,17 @@ const setCachedAnalysis = (cacheKey: string, result: AnalysisResult): void => {
   }
 };
 
+export const clearAnalysisCache = () => {
+  try {
+    Object.keys(localStorage)
+      .filter(k => k.startsWith('analysis_') || k.startsWith('trace_'))
+      .forEach(k => localStorage.removeItem(k));
+    console.log("🗑️ Cleared TelicLens analysis/trace cache");
+  } catch (error) {
+    console.warn("Cache clear error:", error);
+  }
+};
+
 const generateTraceCacheKey = (snippet: string, fileName: string, graphId: string): string => {
   const signature = `${fileName}:${snippet.substring(0, 50)}:${graphId}`;
   let hash = 0;
