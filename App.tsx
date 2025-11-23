@@ -397,7 +397,7 @@ export default function App() {
           const result = await traceCodeSelection(snippet, activeFile.name, analysis, selectedModel);
           setTraceHighlight(result);
           // Auto switch to graph visualization to show result
-          // But keep sidebar as code to allow more selection
+          setViewMode(ViewMode.CAUSAL);
       } catch (err) {
           console.error("Trace error", err);
       } finally {

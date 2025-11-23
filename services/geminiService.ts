@@ -385,13 +385,16 @@ export const traceCodeSelection = async (
     2. **Upstream nodes**: Functions/data that lead TO this code (dependencies)
     3. **Downstream nodes**: Functions/data that are affected BY this code (dependents)
     4. **Intent nodes**: What high-level purposes does this code serve?
+    5. **Paths**: Ordered sequences of node IDs showing data/control flow (source → ... → sink)
 
     ## Output
     Return a JSON object with:
     - 'relatedNodeIds': Array of node IDs that are part of this flow trace
+    - 'relatedEdges': Array of { source, target, reason } edges that connect these nodes
+    - 'paths': Array of arrays, each an ordered list of node IDs showing a flow path
     - 'explanation': Clear explanation of how these nodes relate (2-3 sentences)
 
-    Be thorough but focused - include only nodes with direct causal or intentional relationships.
+    Be thorough but focused - include only nodes/edges with direct causal or intentional relationships.
   `;
 
   try {
@@ -408,6 +411,25 @@ export const traceCodeSelection = async (
               items: { type: Type.STRING },
               description: "IDs of nodes that are relevant to this code snippet" 
             },
+            relatedEdges: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  source: { type: Type.STRING },
+                  target: { type: Type.STRING },
+                  reason: { type: Type.STRING }
+                },
+                required: ['source', 'target']
+              }
+            },
+            paths: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING }
+              }
+            },
             explanation: { type: Type.STRING }
           },
           required: ['relatedNodeIds', 'explanation']
@@ -417,9 +439,24 @@ export const traceCodeSelection = async (
 
     if (response.text) {
       const data = JSON.parse(response.text);
+
+      // Map relatedEdges to edge ids present in the current graph (source->target)
+      const relatedEdgeIds: string[] = [];
+      if (Array.isArray(data.relatedEdges) && currentGraph?.edges) {
+        data.relatedEdges.forEach((edge: { source: string; target: string }) => {
+          const match = currentGraph.edges.find(
+            e => e.source === edge.source && e.target === edge.target
+          );
+          if (match) {
+            relatedEdgeIds.push(`${match.source}->${match.target}`);
+          }
+        });
+      }
+
       const result: TraceResult = {
-        relatedNodeIds: data.relatedNodeIds,
-        relatedEdgeIds: [], // We will compute edges on the client side based on nodes
+        relatedNodeIds: data.relatedNodeIds || [],
+        relatedEdgeIds,
+        paths: data.paths,
         explanation: data.explanation
       };
 

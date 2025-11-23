@@ -55,6 +55,7 @@ export interface AnalysisResult {
 
 export interface TraceResult {
   relatedNodeIds: string[];
-  relatedEdgeIds: string[]; // Although edges don't have explicit IDs in the main type, we can match by source-target
+  relatedEdgeIds: string[]; // Edge identifiers in the form "source->target"
+  paths?: string[][]; // Optional ordered node-id paths showing flow
   explanation: string;
 }

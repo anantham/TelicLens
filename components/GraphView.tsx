@@ -367,11 +367,14 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
           }
           
           // TRACE LOGIC:
-          // If a trace is active, dim edges that aren't part of the trace nodes
+          // If a trace is active, dim edges not in traceEdgeIds (or not connecting traced nodes)
           if (traceHighlight && opacity > 0) {
+             const edgeId = `${edge.source}->${edge.target}`;
+             const isEdgeTraced = traceHighlight.relatedEdgeIds.includes(edgeId);
              const isStartInTrace = traceHighlight.relatedNodeIds.includes(edge.source);
              const isEndInTrace = traceHighlight.relatedNodeIds.includes(edge.target);
-             if (isStartInTrace && isEndInTrace) {
+
+             if (isEdgeTraced || (isStartInTrace && isEndInTrace)) {
                  opacity = 1;
                  strokeWidth = 2; // Thicken tracing edges
              } else {
