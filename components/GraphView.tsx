@@ -443,6 +443,7 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
           let markerId = 'url(#arrowhead)';
           let strokeWidth = 1;
           let opacity = 1;
+          let dashArray: string | undefined;
 
           if (mode === ViewMode.TELIC) {
              if (isTelicEdge) {
