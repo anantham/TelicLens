@@ -625,6 +625,9 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
           } else if (node.type === 'file') {
               fillColor = '#171717';
               strokeColor = '#737373';
+          } else if (node.type === 'event') {
+              fillColor = '#0b1f2d';
+              strokeColor = '#14b8a6';
           }
           
           // Base Opacity - hide intent nodes in CAUSAL mode

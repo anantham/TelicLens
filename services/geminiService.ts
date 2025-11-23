@@ -122,6 +122,7 @@ export const analyzeCodebase = async (files: { name: string; content: string }[]
     - Major functions (type: 'function')
     - Data stores/databases (type: 'data')
     - **System-level intents** (type: 'intent') - e.g., "User Authentication", "Data Integrity", "Privacy Protection"
+    - **User inputs/events** (type: 'event') - e.g., "keydown:W", "click:Start", "HTTP POST /login"
 
     **For each function node, provide:**
     - Clear description of WHAT it does (mechanistic)
@@ -151,7 +152,7 @@ export const analyzeCodebase = async (files: { name: string; content: string }[]
         - "required for compliance → transaction_metadata"
         - "enforces rate limit → request_count"
 
-    - 'flow': Data flows from A to B
+    - 'flow': Data flows from A to B (include events → handlers as flows)
       * Label format: "TRANSFORMATION → DATA" or just "DATA" if no transformation
       * Examples:
         - "encrypts with AES-256 → plaintext_amount" (shows HOW)
@@ -160,6 +161,7 @@ export const analyzeCodebase = async (files: { name: string; content: string }[]
         - "aggregates from multiple sources → transaction_history"
         - "validates format → email_address"
         - "user_id, session_token" (simple data passing)
+        - "keydown W → move_up" (for event → handler)
 
     - 'serves_intent': Function/Data serves this system-level intent (POSITIVE)
       * Label: HOW it serves the intent (mechanism)
@@ -410,7 +412,7 @@ export const traceCodeSelection = async (
     Return a JSON object with:
     - 'relatedNodeIds': Array of node IDs that are part of this flow trace
     - 'relatedEdges': Array of { source, target, reason } edges that connect these nodes
-    - 'paths': Array of arrays, each an ordered list of node IDs showing a flow path
+    - 'paths': Array of arrays, each an ordered list of node IDs showing a flow path (include events as first hop for journey mode)
     - 'explanation': Clear explanation of how these nodes relate (2-3 sentences)
 
     Be thorough but focused - include only nodes/edges with direct causal or intentional relationships.
@@ -564,6 +566,10 @@ const mockAnalysis: AnalysisResult = {
       intent: "Analytics (unclear purpose)",
       location: { file: "main.py", startLine: 50, endLine: 58, aiComment: "⚠️ SUSPICIOUS: Sends unencrypted user_id and payment_method to external endpoint" }
     },
+
+    // Events
+    { id: "e1", label: "keydown:W", type: "event", description: "User presses W to move paddle up" },
+    { id: "e2", label: "keydown:S", type: "event", description: "User presses S to move paddle down" },
     
     // Data
     { id: "d1", label: "TransactionDB", type: "data", description: "Primary SQL storage" },
@@ -596,6 +602,10 @@ const mockAnalysis: AnalysisResult = {
 
     // ⚠️ SUSPICIOUS: Function called but serves no clear system intent
     { source: "fn1", target: "fn6", type: "dependency", label: "sends to external endpoint → user_id, amount, payment_method" },
+
+    // Events to handlers (example)
+    { source: "e1", target: "fn2", type: "flow", label: "keydown W → move paddle up", reason: "user input drives paddle velocity" },
+    { source: "e2", target: "fn2", type: "flow", label: "keydown S → move paddle down", reason: "user input drives paddle velocity" },
 
     // Telic (Intent Hierarchy - supporting → top-level)
     { source: "i4", target: "i2", type: "supports_intent", label: "by verifying identity before access", role: "supports" },

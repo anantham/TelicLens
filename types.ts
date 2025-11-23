@@ -19,7 +19,7 @@ export interface SourceLocation {
 export interface GraphNode {
   id: string;
   label: string;
-  type: 'file' | 'function' | 'data' | 'intent';
+  type: 'file' | 'function' | 'data' | 'intent' | 'event';
   description?: string;
   x?: number;
   y?: number;
