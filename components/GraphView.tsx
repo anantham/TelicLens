@@ -24,6 +24,8 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
   const [dragOffset, setDragOffset] = useState<{ dx: number; dy: number }>({ dx: 0, dy: 0 });
   const svgRef = useRef<SVGSVGElement>(null);
   const [showRiskOverlay, setShowRiskOverlay] = useState(true);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Dagre-based auto layout to reduce crossings
   const computeLayout = useCallback(() => {
@@ -124,6 +126,39 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
 
   const handleReset = () => {
     setViewBox({ x: 0, y: 0, width: 800, height: 600 });
+  };
+
+  const handleFit = () => {
+    if (!positions || Object.keys(positions).length === 0) return;
+    const xs = Object.values(positions).map(p => p.x);
+    const ys = Object.values(positions).map(p => p.y);
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+    const padding = 80;
+    setViewBox({
+      x: minX - padding,
+      y: minY - padding,
+      width: (maxX - minX) + padding * 2,
+      height: (maxY - minY) + padding * 2
+    });
+  };
+
+  const toggleFullscreen = async () => {
+    const el = containerRef.current;
+    if (!el) return;
+    if (!document.fullscreenElement) {
+      try {
+        await el.requestFullscreen();
+        setIsFullscreen(true);
+      } catch (e) {
+        console.warn('Fullscreen request failed', e);
+      }
+    } else {
+      await document.exitFullscreen();
+      setIsFullscreen(false);
+    }
   };
 
   // Convert mouse coords to SVG coords (respects current viewBox)
@@ -240,7 +275,7 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
   if (!data) return <div className="flex items-center justify-center h-full text-neutral-500 font-mono text-sm animate-pulse">AWAITING CODEBASE...</div>;
 
   return (
-    <div className="relative w-full h-full overflow-hidden bg-neutral-950 rounded-xl border border-neutral-800 shadow-2xl">
+    <div ref={containerRef} className="relative w-full h-full overflow-hidden bg-neutral-950 rounded-xl border border-neutral-800 shadow-2xl">
       {/* Mode Badge */}
       <div className="absolute top-4 right-4 px-3 py-1 bg-black/80 backdrop-blur-sm text-[10px] font-bold tracking-widest text-neutral-500 rounded border border-neutral-800 pointer-events-none uppercase z-10">
         MODE: {mode}
@@ -292,6 +327,20 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
           title="Reset View"
         >
           <Maximize2 size={16} />
+        </button>
+        <button
+          onClick={handleFit}
+          className="p-2 bg-black/80 hover:bg-neutral-800 backdrop-blur-sm text-neutral-400 hover:text-white rounded border border-neutral-800 transition-colors text-[10px]"
+          title="Fit graph to view"
+        >
+          FIT
+        </button>
+        <button
+          onClick={toggleFullscreen}
+          className="p-2 bg-black/80 hover:bg-neutral-800 backdrop-blur-sm text-neutral-400 hover:text-white rounded border border-neutral-800 transition-colors text-[10px]"
+          title="Toggle fullscreen"
+        >
+          {isFullscreen ? 'EXIT' : 'FULL'}
         </button>
       </div>
 
