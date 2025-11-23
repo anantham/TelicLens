@@ -189,6 +189,7 @@ export const analyzeCodebase = async (files: { name: string; content: string }[]
     - 'undermines_intent': Code or intent that **conflicts with or erodes** the parent intent (NEGATIVE polarity)
       * Label: HOW it undermines (e.g., "exfiltrates PII externally", "bypasses auth", "sends unencrypted data")
       * Use when a function or sub-intent works against the higher telos
+    - You may set an optional "color" on edges to highlight risk (e.g., orange for suspicious flows, red for critical undermines).
 
     **CRITICAL INVESTIGATIVE GUIDELINES**:
 
@@ -319,7 +320,8 @@ export const analyzeCodebase = async (files: { name: string; content: string }[]
                   label: { type: Type.STRING },
                   type: { type: Type.STRING, enum: ['dependency', 'flow', 'serves_intent', 'supports_intent', 'undermines_intent'] },
                   reason: { type: Type.STRING, description: "Explicit rationale/condition for this edge" },
-                  role: { type: Type.STRING, description: "Polarity of telic edge", enum: ['supports', 'undermines'] }
+                  role: { type: Type.STRING, description: "Polarity of telic edge", enum: ['supports', 'undermines'] },
+                  color: { type: Type.STRING, description: "Optional edge color hint (e.g., orange for insecure flow)" }
                 },
                 required: ['source', 'target', 'type']
               }

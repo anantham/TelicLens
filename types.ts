@@ -40,6 +40,7 @@ export interface GraphEdge {
   reason?: string; // explicit rationale for the edge
   type: 'dependency' | 'flow' | 'serves_intent' | 'supports_intent' | 'undermines_intent';
   role?: 'supports' | 'undermines'; // polarity for telic edges
+  color?: string; // optional edge color hint from AI (e.g., orange for insecure)
 }
 
 export interface AnalysisResult {

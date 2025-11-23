@@ -441,7 +441,7 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
           const edgeId = `${edge.source}->${edge.target}`;
           const isContradiction = riskSets.contradictionEdgeIds.has(edgeId);
 
-          let strokeColor = '#333';
+          let strokeColor = edge.color || '#333';
           let markerId = 'url(#arrowhead)';
           let strokeWidth = 1;
           let opacity = 1;
