@@ -1,7 +1,13 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { AnalysisResult, TraceResult } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const apiKey = (import.meta as any)?.env?.VITE_API_KEY || process.env.API_KEY || '';
+
+if (!apiKey) {
+  console.error("❌ Missing API key. Set VITE_API_KEY in your environment.");
+}
+
+const ai = new GoogleGenAI({ apiKey });
 
 // Cache utility functions
 const generateCacheKey = (files: { name: string; content: string }[]): string => {
