@@ -271,6 +271,25 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
     return { orphanIds, suspiciousIds, contradictionEdgeIds };
   }, [data]);
 
+  // Map of edges that have a reciprocal counterpart (for curved rendering)
+  const reciprocalEdges = useMemo(() => {
+    const set = new Set<string>();
+    const edgePairs = new Set<string>();
+    if (!data) return set;
+    data.edges.forEach(e => {
+      const key = `${e.source}->${e.target}`;
+      edgePairs.add(key);
+    });
+    data.edges.forEach(e => {
+      const forward = `${e.source}->${e.target}`;
+      const reverse = `${e.target}->${e.source}`;
+      if (edgePairs.has(reverse)) {
+        set.add(forward);
+      }
+    });
+    return set;
+  }, [data]);
+
   if (!data) return <div className="flex items-center justify-center h-full text-neutral-500 font-mono text-sm animate-pulse">AWAITING CODEBASE...</div>;
 
   return (
@@ -482,9 +501,18 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
 
           if (opacity === 0) return null;
 
-          // Calculate midpoint for label
-          const midX = (x1 + x2) / 2;
-          const midY = (y1 + y2) / 2;
+          // Curve reciprocal edges to avoid overlap
+          const hasReciprocal = reciprocalEdges.has(edgeId);
+          const curveOffset = hasReciprocal ? 25 : 0;
+          const nx = hasReciprocal ? (-(y2 - y1)) : 0;
+          const ny = hasReciprocal ? (x2 - x1) : 0;
+          const len = Math.hypot(nx, ny) || 1;
+          const cx = (x1 + x2) / 2 + (nx / len) * curveOffset;
+          const cy = (y1 + y2) / 2 + (ny / len) * curveOffset;
+
+          // Quadratic midpoint for label
+          const midX = (x1 + cx + x2) / 3;
+          const midY = (y1 + cy + y2) / 3;
 
           // Calculate label rotation to align with edge
           const labelAngle = Math.atan2(dy, dx) * (180 / Math.PI);
@@ -493,15 +521,13 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
 
           return (
             <g key={i} opacity={opacity} className="transition-all duration-500">
-              <line
-                x1={x1}
-                y1={y1}
-                x2={x2}
-                y2={y2}
+              <path
+                d={`M ${x1} ${y1} Q ${cx} ${cy} ${x2} ${y2}`}
+                fill="none"
                 stroke={strokeColor}
                 strokeWidth={strokeWidth}
                 markerEnd={markerId}
-                strokeDasharray={isTelicEdge ? "3,3" : ""}
+                strokeDasharray={dashArray || (isTelicEdge ? "3,3" : "")}
               />
 
               {/* Edge Label - only show in CAUSAL mode and if label exists */}
