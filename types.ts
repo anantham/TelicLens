@@ -61,6 +61,7 @@ export interface TraceResult {
   relatedEdgeIds: string[]; // Edge identifiers in the form "source->target"
   paths?: string[][]; // Optional ordered node-id paths showing flow
   explanation: string;
+  fromCache?: boolean;
 }
 
 export type TraceMode = 'data' | 'journey';

@@ -370,7 +370,7 @@ export const traceCodeSelection = async (
       const cacheAge = Date.now() - (data.timestamp || 0);
       if (cacheAge < 24 * 60 * 60 * 1000) { // 24 hours
         console.log("💾 Using cached trace result");
-        return data.result;
+        return { ...data.result, fromCache: true };
       } else {
         localStorage.removeItem(cacheKey);
       }
@@ -478,7 +478,8 @@ export const traceCodeSelection = async (
         relatedNodeIds: data.relatedNodeIds || [],
         relatedEdgeIds,
         paths: data.paths,
-        explanation: data.explanation
+        explanation: data.explanation,
+        fromCache: false
       };
 
       // Cache the trace result

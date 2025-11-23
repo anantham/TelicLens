@@ -5,7 +5,7 @@ import { analyzeCodebase, traceCodeSelection, clearAnalysisCache } from './servi
 import { CodeFile, AnalysisResult, ViewMode, GraphNode, TraceResult, SourceLocation, TraceMode } from './types';
 import { Activity, Target, Loader2, Play, Network, Download, Settings } from 'lucide-react';
 import { exportAsJSON, exportAsTextReport, exportAsMarkdown } from './utils/export';
-import { getEstimatedTime, saveAnalysisMetric } from './utils/analysisMetrics';
+import { getEstimatedTime, saveAnalysisMetric, getEstimatedTraceTime, saveTraceMetric } from './utils/analysisMetrics';
 
 const DEMO_FILES: CodeFile[] = [
   {
@@ -146,6 +146,9 @@ export default function App() {
   });
   const settingsMenuRef = useRef<HTMLDivElement>(null);
   const [showRiskLegend, setShowRiskLegend] = useState(true);
+  const [traceEstimatedTime, setTraceEstimatedTime] = useState(0);
+  const [traceElapsedTime, setTraceElapsedTime] = useState(0);
+  const [traceStartTime, setTraceStartTime] = useState<number | null>(null);
 
   // LOCATION NAVIGATOR STATE (for navigating through multiple code locations)
   const [locationNavigator, setLocationNavigator] = useState<{
@@ -285,6 +288,16 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [locationNavigator]);
 
+  // Trace timer
+  useEffect(() => {
+    if (!traceStartTime) return;
+    const interval = setInterval(() => {
+      const now = Date.now();
+      setTraceElapsedTime((now - traceStartTime) / 1000);
+    }, 100);
+    return () => clearInterval(interval);
+  }, [traceStartTime]);
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
 
@@ -396,16 +409,30 @@ export default function App() {
   const handleTrace = async (snippet: string, mode: TraceMode = 'data') => {
       if (!analysis || !activeFile) return;
       setIsTracing(true);
+      const charCount = snippet.length;
+      const estimatedTraceSeconds = getEstimatedTraceTime(selectedModel, charCount);
+      setTraceEstimatedTime(estimatedTraceSeconds);
+      const start = Date.now();
+      setTraceStartTime(start);
 
       try {
           const result = await traceCodeSelection(snippet, activeFile.name, analysis, selectedModel, mode);
           setTraceHighlight(result);
           // Auto switch to graph visualization to show result
           setViewMode(ViewMode.CAUSAL);
+          if (!result.fromCache) {
+              const actualSeconds = (Date.now() - start) / 1000;
+              saveTraceMetric(selectedModel, charCount, actualSeconds);
+              console.log(`✅ Trace time: ${actualSeconds.toFixed(1)}s (estimated: ${estimatedTraceSeconds.toFixed(1)}s)`);
+          } else {
+              console.log('✅ Trace used cache (skipped timing metric)');
+          }
       } catch (err) {
           console.error("Trace error", err);
       } finally {
           setIsTracing(false);
+          setTraceStartTime(null);
+          setTraceElapsedTime(0);
       }
   };
 
@@ -648,12 +675,18 @@ export default function App() {
                     <Network size={12} />
                     Active Trace: {traceHighlight.relatedNodeIds.length} nodes
                     <button
-                        onClick={() => setTraceHighlight(null)}
-                        className="ml-2 hover:text-white"
+                       onClick={() => setTraceHighlight(null)}
+                       className="ml-2 hover:text-white"
                     >
-                        ×
+                       ×
                     </button>
                  </div>
+             )}
+             {isTracing && (
+                <div className="flex items-center gap-2 px-3 py-1 bg-emerald-900/30 border border-emerald-500/30 rounded text-xs text-emerald-200 animate-in fade-in font-mono">
+                  <Loader2 size={12} className="animate-spin" />
+                  Trace: {traceElapsedTime.toFixed(1)}s / {traceEstimatedTime.toFixed(1)}s
+                </div>
              )}
 
             {/* Settings Menu */}

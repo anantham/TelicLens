@@ -13,6 +13,9 @@ interface AnalysisMetric {
 const METRICS_KEY = 'teliclens_analysis_metrics';
 const MAX_METRICS = 50; // Keep last 50 analyses per model
 
+const TRACE_METRICS_KEY = 'teliclens_trace_metrics';
+const MAX_TRACE_METRICS = 50;
+
 /**
  * Save an analysis metric to localStorage
  */
@@ -75,6 +78,61 @@ export const getEstimatedTime = (model: string, totalChars: number): number => {
     return estimated;
   } catch (error) {
     console.warn('Failed to calculate estimated time:', error);
+    return getDefaultEstimate(model, totalChars);
+  }
+};
+
+/**
+ * Save a trace metric to localStorage
+ */
+export const saveTraceMetric = (model: string, totalChars: number, actualTimeSeconds: number) => {
+  try {
+    const stored = localStorage.getItem(TRACE_METRICS_KEY);
+    const metrics: AnalysisMetric[] = stored ? JSON.parse(stored) : [];
+
+    metrics.push({
+      model,
+      totalChars,
+      actualTimeSeconds,
+      timestamp: Date.now()
+    });
+
+    const trimmed = metrics.slice(-MAX_TRACE_METRICS);
+    localStorage.setItem(TRACE_METRICS_KEY, JSON.stringify(trimmed));
+    console.log(`📊 Saved trace metric: ${totalChars} chars in ${actualTimeSeconds.toFixed(1)}s (${model})`);
+  } catch (error) {
+    console.warn('Failed to save trace metric:', error);
+  }
+};
+
+/**
+ * Get estimated trace time based on historical data for a specific model
+ */
+export const getEstimatedTraceTime = (model: string, totalChars: number): number => {
+  try {
+    const stored = localStorage.getItem(TRACE_METRICS_KEY);
+    if (!stored) {
+      return getDefaultEstimate(model, totalChars);
+    }
+
+    const metrics: AnalysisMetric[] = JSON.parse(stored);
+    const modelMetrics = metrics.filter(m => m.model === model);
+
+    if (modelMetrics.length === 0) {
+      console.log(`⏱️ No trace historical data for ${model}, using defaults`);
+      return getDefaultEstimate(model, totalChars);
+    }
+
+    const totalTime = modelMetrics.reduce((sum, m) => sum + m.actualTimeSeconds, 0);
+    const totalCharsProcessed = modelMetrics.reduce((sum, m) => sum + m.totalChars, 0);
+    const avgCharsPerSecond = totalCharsProcessed / totalTime;
+    const baseOverhead = 1;
+    const estimated = Math.max(1, (totalChars / avgCharsPerSecond) + baseOverhead);
+
+    console.log(`⏱️ Trace estimated from ${modelMetrics.length} runs: ${estimated.toFixed(1)}s (${avgCharsPerSecond.toFixed(0)} chars/sec)`);
+    return estimated;
+  } catch (error) {
+    console.warn('Failed to calculate trace estimated time:', error);
     return getDefaultEstimate(model, totalChars);
   }
 };
