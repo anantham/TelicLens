@@ -248,7 +248,7 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
 
       {/* Risk Legend */}
       {showRiskOverlay && (
-        <div className="absolute top-4 right-24 px-3 py-2 bg-black/80 backdrop-blur-sm text-[10px] text-neutral-200 rounded border border-red-500/40 z-10 space-y-1">
+        <div className="absolute bottom-4 right-4 px-3 py-2 bg-black/80 backdrop-blur-sm text-[10px] text-neutral-200 rounded border border-red-500/40 z-10 space-y-1">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-red-500" />
             <span>Undermines / Contradiction</span>
