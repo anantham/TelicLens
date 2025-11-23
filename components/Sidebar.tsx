@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { CodeFile, GraphNode } from '../types';
+import React, { useEffect, useState } from 'react';
+import { CodeFile, GraphNode, AnalysisResult, SourceLocation } from '../types';
 import { FileText, Box, Target, Upload, Code, Info, Network, FolderOpen } from 'lucide-react';
 
 interface SidebarProps {
@@ -12,32 +12,67 @@ interface SidebarProps {
   onSelectFile: (file: CodeFile) => void;
   onTrace: (snippet: string) => void;
   isTracing: boolean;
+  highlightedText: string | null;
+  analysis: AnalysisResult | null;
+  locationNavigator: {
+    locations: SourceLocation[];
+    currentIndex: number;
+    nodeContext: GraphNode;
+  } | null;
+  onNavigateNext: () => void;
+  onNavigatePrevious: () => void;
+  onCloseNavigator: () => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ 
-  files, 
-  selectedNode, 
+export const Sidebar: React.FC<SidebarProps> = ({
+  files,
+  selectedNode,
   activeFile,
   sidebarMode,
   setSidebarMode,
   onFileUpload,
   onSelectFile,
   onTrace,
-  isTracing
+  isTracing,
+  highlightedText,
+  analysis,
+  locationNavigator,
+  onNavigateNext,
+  onNavigatePrevious,
+  onCloseNavigator
 }) => {
   const [selectedText, setSelectedText] = useState('');
   const [selectionRect, setSelectionRect] = useState<{top: number, left: number} | null>(null);
+
+  // Drag & Drop state
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragCounter, setDragCounter] = useState(0);
+
+  const currentLocation = locationNavigator ? locationNavigator.locations[locationNavigator.currentIndex] : null;
+  const safeFileName = activeFile ? activeFile.name.replace(/[^a-zA-Z0-9_-]/g, '-') : '';
+
+  // Auto-scroll to the highlighted location when it changes
+  useEffect(() => {
+    if (!currentLocation || !activeFile) return;
+    if (currentLocation.file !== activeFile.name) return;
+
+    const targetId = `code-line-${safeFileName}-${currentLocation.startLine}`;
+    const el = document.getElementById(targetId);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [currentLocation, activeFile, safeFileName]);
 
   const handleMouseUp = (e: React.MouseEvent) => {
     const selection = window.getSelection();
     if (selection && selection.toString().trim().length > 0 && sidebarMode === 'CODE') {
         const text = selection.toString();
         setSelectedText(text);
-        
+
         // Calculate position for floating button
         const range = selection.getRangeAt(0);
         const rect = range.getBoundingClientRect();
-        
+
         // Adjust for container offset (rough estimation for prototype)
         setSelectionRect({
             top: rect.bottom + 5,
@@ -46,6 +81,49 @@ export const Sidebar: React.FC<SidebarProps> = ({
     } else {
         setSelectedText('');
         setSelectionRect(null);
+    }
+  };
+
+  // Drag & Drop handlers
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragCounter(prev => prev + 1);
+    if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+      setIsDragging(true);
+    }
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragCounter(prev => prev - 1);
+    if (dragCounter - 1 === 0) {
+      setIsDragging(false);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    setDragCounter(0);
+
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      // Create a synthetic event to reuse existing onFileUpload handler
+      const syntheticEvent = {
+        target: {
+          files: e.dataTransfer.files,
+          value: ''
+        }
+      } as React.ChangeEvent<HTMLInputElement>;
+
+      onFileUpload(syntheticEvent);
     }
   };
 
@@ -118,6 +196,50 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <p className="text-sm text-neutral-300 leading-relaxed">{selectedNode.description || "No description available."}</p>
                 </div>
 
+                {/* Show functions that serve this intent */}
+                {selectedNode.type === 'intent' && analysis && (
+                  <div className="space-y-2">
+                    <h3 className="text-xs text-neutral-400 uppercase font-semibold">Implemented By</h3>
+                    {(() => {
+                      const servingEdges = analysis.edges.filter(
+                        e => e.target === selectedNode.id && e.type === 'serves_intent'
+                      );
+                      const servingNodes = servingEdges
+                        .map(e => ({
+                          node: analysis.nodes.find(n => n.id === e.source),
+                          edge: e
+                        }))
+                        .filter(item => item.node);
+
+                      if (servingNodes.length === 0) {
+                        return <p className="text-xs text-neutral-500 italic">No implementations found</p>;
+                      }
+
+                      return (
+                        <ul className="space-y-2">
+                          {servingNodes.map(({ node, edge }, i) => (
+                            <li
+                              key={i}
+                              onClick={() => node && onSelectFile && files.find(f => f.content.includes(node.label))}
+                              className="p-2 bg-purple-900/10 border border-purple-500/20 rounded cursor-pointer hover:bg-purple-900/20 transition-colors"
+                            >
+                              <div className="flex items-start gap-2">
+                                <Box size={12} className="text-purple-400 mt-0.5 flex-shrink-0" />
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-xs font-mono text-purple-200 font-semibold">{node?.label}</div>
+                                  {edge.label && (
+                                    <div className="text-[10px] text-neutral-500 mt-0.5 italic">"{edge.label}"</div>
+                                  )}
+                                </div>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      );
+                    })()}
+                  </div>
+                )}
+
                 {selectedNode.intent && (
                   <div className="p-3 bg-purple-900/20 border border-purple-500/30 rounded-lg">
                     <h3 className="text-xs text-purple-400 uppercase font-semibold mb-1 flex items-center gap-2">
@@ -139,15 +261,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     </div>
                   </div>
                 )}
-                
-                <div className="pt-4">
-                    <button className="w-full py-2 bg-neutral-800 hover:bg-red-900/30 text-red-400 text-xs border border-neutral-700 hover:border-red-500/50 rounded transition-colors group">
-                        SIMULATE BREAKAGE <span className="group-hover:text-red-200">(x100)</span>
-                    </button>
-                    <p className="text-[10px] text-neutral-600 mt-1 text-center">
-                        Adjust parameter magnitude to test robustness.
-                    </p>
-                </div>
               </div>
             ) : (
               <div className="h-full flex flex-col items-center justify-center text-neutral-600">
@@ -166,15 +279,86 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <span className="text-xs font-mono text-blue-400">{activeFile.name}</span>
                     <span className="text-[10px] text-neutral-600 uppercase">{activeFile.language}</span>
                  </div>
-                 <div className="flex-1 overflow-auto p-4 bg-neutral-900/80">
-                    <code className="font-mono text-xs text-neutral-300 block pb-12">
-                        {activeFile.content.split('\n').map((line, i) => (
-                            <div key={i} className="flex hover:bg-neutral-800/50 min-w-fit">
-                                <span className="text-neutral-600 select-none w-8 text-right pr-3 flex-shrink-0">{i + 1}</span>
-                                <span className="whitespace-pre">{line}</span>
-                            </div>
-                        ))}
-                    </code>
+                 <div className="flex-1 overflow-auto bg-neutral-900/80">
+                    {locationNavigator && currentLocation && (
+                      <div className="sticky top-0 z-10 flex items-center justify-between gap-3 px-4 py-2 bg-blue-900/30 border-b border-blue-700/30 backdrop-blur">
+                        <div className="flex flex-col">
+                          <span className="text-[10px] text-blue-200 uppercase font-semibold">TelicLens Navigator</span>
+                          <span className="text-xs font-mono text-blue-100">
+                            {locationNavigator.nodeContext.label} • {currentLocation.file}:{currentLocation.startLine}-{currentLocation.endLine}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-blue-100 font-mono">
+                            {locationNavigator.currentIndex + 1} / {locationNavigator.locations.length}
+                          </span>
+                          <button
+                            onClick={onNavigatePrevious}
+                            className="px-2 py-1 text-[10px] bg-blue-800 hover:bg-blue-700 text-white rounded disabled:opacity-40 transition-colors"
+                            disabled={locationNavigator.locations.length <= 1}
+                          >
+                            ← Prev
+                          </button>
+                          <button
+                            onClick={onNavigateNext}
+                            className="px-2 py-1 text-[10px] bg-blue-800 hover:bg-blue-700 text-white rounded disabled:opacity-40 transition-colors"
+                            disabled={locationNavigator.locations.length <= 1}
+                          >
+                            Next →
+                          </button>
+                          <button
+                            onClick={onCloseNavigator}
+                            className="px-2 py-1 text-[10px] text-blue-200 hover:text-white"
+                            title="Close navigator"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="p-4">
+                      <code className="font-mono text-xs text-neutral-300 block pb-12">
+                          {activeFile.content.split('\n').map((line, i) => {
+                              const lineNumber = i + 1;
+                              const inLocationRange = currentLocation
+                                && activeFile.name === currentLocation.file
+                                && lineNumber >= currentLocation.startLine
+                                && lineNumber <= currentLocation.endLine;
+                              const shouldShowComment = currentLocation
+                                && activeFile.name === currentLocation.file
+                                && currentLocation.aiComment
+                                && lineNumber === currentLocation.startLine;
+
+                              const textHighlighted = highlightedText && line.includes(highlightedText);
+                              const showHighlight = inLocationRange || textHighlighted;
+
+                              return (
+                                <React.Fragment key={i}>
+                                  {shouldShowComment && (
+                                    <div className="flex min-w-fit bg-blue-900/20 border-l-2 border-blue-500/70 px-3 py-2 mb-1">
+                                      <span className="text-neutral-600 select-none w-8 text-right pr-3 flex-shrink-0">//</span>
+                                      <div className="whitespace-pre-wrap text-[11px] text-blue-100 leading-snug">
+                                        <div className="font-semibold text-blue-200">TelicLens: {locationNavigator?.nodeContext.label}</div>
+                                        <div>{currentLocation.aiComment}</div>
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  <div
+                                      id={`code-line-${safeFileName}-${lineNumber}`}
+                                      className={`flex hover:bg-neutral-800/50 min-w-fit ${
+                                          showHighlight ? 'bg-yellow-900/30 border-l-2 border-yellow-500' : ''
+                                      }`}
+                                  >
+                                      <span className="text-neutral-600 select-none w-8 text-right pr-3 flex-shrink-0">{lineNumber}</span>
+                                      <span className="whitespace-pre">{line}</span>
+                                  </div>
+                                </React.Fragment>
+                              );
+                          })}
+                      </code>
+                    </div>
                  </div>
                  {isTracing && (
                     <div className="absolute bottom-4 left-4 right-4 bg-blue-900/90 text-white p-3 rounded text-xs shadow-lg backdrop-blur animate-pulse border border-blue-500">
@@ -193,8 +377,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       </div>
 
-      {/* File List */}
-      <div className="p-4 border-t border-neutral-800 bg-neutral-950 h-48 flex flex-col">
+      {/* File List with Drag & Drop */}
+      <div
+        className={`p-4 border-t border-neutral-800 bg-neutral-950 h-48 flex flex-col relative transition-all ${
+          isDragging ? 'border-blue-500 border-2 bg-blue-900/20' : ''
+        }`}
+        onDragEnter={handleDragEnter}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
+        {/* Drag Overlay */}
+        {isDragging && (
+          <div className="absolute inset-0 bg-blue-900/40 backdrop-blur-sm flex items-center justify-center z-50 animate-in fade-in">
+            <div className="flex flex-col items-center gap-2 text-blue-200">
+              <Upload size={32} className="animate-bounce" />
+              <span className="text-sm font-bold">Drop files here</span>
+            </div>
+          </div>
+        )}
+
         <div className="flex justify-between items-center mb-3 shrink-0">
             <h3 className="text-xs font-bold text-neutral-400 uppercase">Files ({files.length})</h3>
             <div className="flex gap-2">
@@ -231,21 +433,29 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </label>
             </div>
         </div>
-        <div className="flex-1 overflow-y-auto pr-1 custom-scrollbar">
-          <ul className="space-y-1">
-            {files.map((file, idx) => (
-              <li 
-                key={idx} 
-                onClick={() => onSelectFile(file)}
-                className={`flex items-center gap-2 text-xs p-1.5 rounded cursor-pointer transition-colors ${activeFile?.name === file.name ? 'bg-neutral-800 text-white' : 'text-neutral-400 hover:bg-neutral-900 hover:text-neutral-300'}`}
-              >
-                <FileText size={12} className={activeFile?.name === file.name ? "text-blue-400" : "text-neutral-600"} />
-                <span className="truncate">{file.name}</span>
-              </li>
-            ))}
-            {files.length === 0 && <li className="text-xs text-neutral-600 italic text-center py-4">No files loaded</li>}
-          </ul>
-        </div>
+
+        {files.length === 0 ? (
+          <div className="flex-1 flex flex-col items-center justify-center text-neutral-600 border-2 border-dashed border-neutral-800 rounded-lg">
+            <Upload size={32} className="mb-2 opacity-50" />
+            <p className="text-xs text-center font-bold">Drag files here</p>
+            <p className="text-[10px] text-center text-neutral-700 mt-1">or use the buttons above</p>
+          </div>
+        ) : (
+          <div className="flex-1 overflow-y-auto pr-1 custom-scrollbar">
+            <ul className="space-y-1">
+              {files.map((file, idx) => (
+                <li
+                  key={idx}
+                  onClick={() => onSelectFile(file)}
+                  className={`flex items-center gap-2 text-xs p-1.5 rounded cursor-pointer transition-colors ${activeFile?.name === file.name ? 'bg-neutral-800 text-white' : 'text-neutral-400 hover:bg-neutral-900 hover:text-neutral-300'}`}
+                >
+                  <FileText size={12} className={activeFile?.name === file.name ? "text-blue-400" : "text-neutral-600"} />
+                  <span className="truncate">{file.name}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
     </div>
   );

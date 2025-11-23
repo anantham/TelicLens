@@ -9,6 +9,13 @@ export interface CodeFile {
   language: string;
 }
 
+export interface SourceLocation {
+  file: string;
+  startLine: number;
+  endLine: number;
+  aiComment?: string;  // AI-generated contextual explanation
+}
+
 export interface GraphNode {
   id: string;
   label: string;
@@ -17,17 +24,20 @@ export interface GraphNode {
   x?: number;
   y?: number;
   // Specifically for Telic view
-  intent?: string; 
+  intent?: string;
   // Specifically for Causal view
   inputs?: string[];
   outputs?: string[];
+  // Source location(s)
+  location?: SourceLocation;
+  locations?: SourceLocation[];  // For nodes that appear in multiple places
 }
 
 export interface GraphEdge {
   source: string;
   target: string;
   label?: string;
-  type: 'dependency' | 'flow' | 'serves_intent';
+  type: 'dependency' | 'flow' | 'serves_intent' | 'supports_intent';
 }
 
 export interface AnalysisResult {

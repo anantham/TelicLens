@@ -3,7 +3,79 @@ import { AnalysisResult, TraceResult } from "../types";
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-export const analyzeCodebase = async (files: { name: string; content: string }[]): Promise<AnalysisResult> => {
+// Cache utility functions
+const generateCacheKey = (files: { name: string; content: string }[]): string => {
+  // Create a simple hash from file names and content lengths
+  const signature = files
+    .map(f => `${f.name}:${f.content.length}:${f.content.substring(0, 100)}`)
+    .join('|');
+
+  // Simple hash function
+  let hash = 0;
+  for (let i = 0; i < signature.length; i++) {
+    const char = signature.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32-bit integer
+  }
+  return `analysis_${Math.abs(hash).toString(36)}`;
+};
+
+const getCachedAnalysis = (cacheKey: string): AnalysisResult | null => {
+  try {
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) {
+      const data = JSON.parse(cached);
+      // Check if cache is less than 24 hours old
+      const cacheAge = Date.now() - (data.timestamp || 0);
+      const maxAge = 24 * 60 * 60 * 1000; // 24 hours
+
+      if (cacheAge < maxAge) {
+        return data.result;
+      } else {
+        // Remove stale cache
+        localStorage.removeItem(cacheKey);
+      }
+    }
+  } catch (error) {
+    console.warn("Cache read error:", error);
+  }
+  return null;
+};
+
+const setCachedAnalysis = (cacheKey: string, result: AnalysisResult): void => {
+  try {
+    const cacheData = {
+      result,
+      timestamp: Date.now()
+    };
+    localStorage.setItem(cacheKey, JSON.stringify(cacheData));
+  } catch (error) {
+    console.warn("Cache write error:", error);
+  }
+};
+
+const generateTraceCacheKey = (snippet: string, fileName: string, graphId: string): string => {
+  const signature = `${fileName}:${snippet.substring(0, 50)}:${graphId}`;
+  let hash = 0;
+  for (let i = 0; i < signature.length; i++) {
+    const char = signature.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
+  }
+  return `trace_${Math.abs(hash).toString(36)}`;
+};
+
+export const analyzeCodebase = async (files: { name: string; content: string }[], model: string = 'gemini-2.5-pro'): Promise<AnalysisResult> => {
+  // Check cache first
+  const cacheKey = generateCacheKey(files);
+  const cachedResult = getCachedAnalysis(cacheKey);
+
+  if (cachedResult) {
+    console.log("💾 Using cached analysis (saves API call!)");
+    console.log(`📊 Cached: ${cachedResult.nodes.length} nodes, ${cachedResult.edges.length} edges`);
+    return cachedResult;
+  }
+
   const fileContext = files.map(f => `File: ${f.name}\nContent:\n${f.content}\n---`).join('\n');
 
   const prompt = `
@@ -44,15 +116,106 @@ export const analyzeCodebase = async (files: { name: string; content: string }[]
     - Clear description of WHAT it does (mechanistic)
     - Clear "intent" field explaining WHY it exists (teleological)
     - Inputs/outputs for data flow tracking
+    - **CRITICAL: Exact source location** with line numbers and AI-generated comment:
+      * "file": The exact filename where this function is defined
+      * "startLine": Line number where function definition starts (e.g., "def function_name" or "function function_name")
+      * "endLine": Line number where function definition ends (closing brace/last line)
+      * "aiComment": One-sentence explanation of how this code relates to its parent node in the graph
+        - For functions serving intents: "Serves '{IntentName}' by {how it does it}"
+        - For functions called by others: "Called by {parent} to {purpose}"
+        - Keep under 100 characters
+        - Example: "Serves 'System Security' by verifying JWT signature before granting access"
 
     **For intent nodes:**
-    - High-level system goals (3-6 major intents)
+    - Create a HIERARCHY of intents (both high-level and supporting intents)
+    - Top-level intents: Fundamental system goals (3-4 major intents like "System Security", "Data Integrity", "User Privacy")
+    - Supporting intents: Lower-level goals that serve higher intents (e.g., "Authenticate Users" serves "System Security")
     - Use imperative language: "Authenticate Users", "Prevent Fraud", "Maintain Data Consistency"
 
-    **Edges**: Create three types:
+    **Edges**: Create FOUR types with **RICH, INVESTIGATIVE labels** (see examples below):
     - 'dependency': Function A calls Function B
+      * Label format: "WHY → WHAT" (reason for call → data passed)
+      * Examples:
+        - "validates auth → JWT token" (not just "JWT token")
+        - "checks fraud risk → user_id, amount"
+        - "required for compliance → transaction_metadata"
+        - "enforces rate limit → request_count"
+
     - 'flow': Data flows from A to B
+      * Label format: "TRANSFORMATION → DATA" or just "DATA" if no transformation
+      * Examples:
+        - "encrypts with AES-256 → plaintext_amount" (shows HOW)
+        - "sanitizes input → raw_user_input"
+        - "hashes with SHA-256 → password"
+        - "aggregates from multiple sources → transaction_history"
+        - "validates format → email_address"
+        - "user_id, session_token" (simple data passing)
+
     - 'serves_intent': Function/Data serves this system-level intent
+      * Label: HOW it serves the intent (mechanism)
+      * Examples:
+        - "verifies JWT signature" (for "Authenticate Users")
+        - "runs ML risk model" (for "Detect Fraud")
+        - "encrypts at rest" (for "Protect Privacy")
+        - "enforces ACID properties" (for "Data Integrity")
+
+    - 'supports_intent': Lower-level intent supports a higher-level intent
+      * Label: HOW the supporting intent contributes
+      * Examples:
+        - "by verifying identity before access"
+        - "through continuous monitoring"
+        - "via encryption at rest and in transit"
+
+    **CRITICAL INVESTIGATIVE GUIDELINES**:
+
+    1. **User Journey Tracking**: When data represents user actions, include context:
+       - "user submits form → name, email, payment_info"
+       - "after successful login → session_token"
+       - "on error → error_code, retry_count"
+
+    2. **Security-Relevant Flows**: Highlight transformations that affect security:
+       - "sanitizes to prevent XSS → user_input"
+       - "validates against SQL injection → query_params"
+       - "encrypts before external API call → customer_data"
+       - "removes PII before logging → request_metadata"
+
+    3. **Conditional Logic**: Show when things happen conditionally:
+       - "if suspicious flag set → fraud_check_result"
+       - "only after auth success → protected_resource"
+       - "on payment failure → rollback_transaction"
+
+    4. **Suspicious Pattern Detection**: Flag unusual flows:
+       - "sends to external endpoint → user_credentials" ⚠️ SUSPICIOUS
+       - "bypasses validation → direct_db_write" ⚠️ DANGEROUS
+       - "copies to hidden variable → sensitive_data" ⚠️ HIDDEN SIDE EFFECT
+
+    5. **Data Transformations**: Show HOW data changes (critical for security):
+       - NOT: "password" ❌
+       - YES: "hashes with bcrypt → password" ✓
+       - NOT: "api_key" ❌
+       - YES: "masks all but last 4 chars → api_key" ✓
+
+    **EXAMPLES OF GOOD vs SUSPICIOUS EDGE LABELS**:
+
+    🟢 GOOD (Clear purpose + transformation):
+    - "validates schema before processing → user_input"
+    - "encrypts with customer key → payment_data"
+    - "after auth check passes → user_session"
+    - "aggregates for analytics → anonymized_usage_data"
+
+    🔴 SUSPICIOUS (Red flags for investigation):
+    - "copies for unknown purpose → user_credentials"
+    - "sends without encryption → sensitive_info"
+    - "bypasses normal flow → direct_write"
+    - "obfuscated encoding → metadata"
+
+    **REMEMBER**: Someone using TelicLens is investigating potentially AI-generated "slop code"
+    that might have hidden vulnerabilities or lack clear purpose. Your labels should help them:
+    - Trace user data through the system (where does PII go?)
+    - Identify security transformations (is data sanitized? encrypted?)
+    - Spot unusual flows (why is this sending data externally?)
+    - Understand conditional logic (what happens on error paths?)
+    - Find orphaned code (what is this code actually doing?)
 
     **Summary**: Provide an executive summary that highlights:
     - Overall system purpose
@@ -62,9 +225,15 @@ export const analyzeCodebase = async (files: { name: string; content: string }[]
     The output must strictly follow the JSON schema provided.
   `;
 
+  console.log("🔍 Starting codebase analysis...");
+  console.log(`📂 Analyzing ${files.length} files`);
+  console.log(`🤖 Using model: ${model}`);
+  console.log(`🔑 API Key present:`, !!process.env.API_KEY);
+
   try {
+    console.log("🌐 Sending request to Gemini API...");
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: model,
       contents: fileContext + "\n" + prompt,
       config: {
         responseMimeType: "application/json",
@@ -83,7 +252,17 @@ export const analyzeCodebase = async (files: { name: string; content: string }[]
                   description: { type: Type.STRING },
                   intent: { type: Type.STRING, description: "The teleological purpose of this node" },
                   inputs: { type: Type.ARRAY, items: { type: Type.STRING } },
-                  outputs: { type: Type.ARRAY, items: { type: Type.STRING } }
+                  outputs: { type: Type.ARRAY, items: { type: Type.STRING } },
+                  location: {
+                    type: Type.OBJECT,
+                    description: "Exact source code location for this node",
+                    properties: {
+                      file: { type: Type.STRING },
+                      startLine: { type: Type.NUMBER },
+                      endLine: { type: Type.NUMBER },
+                      aiComment: { type: Type.STRING, description: "AI-generated contextual explanation" }
+                    }
+                  }
                 },
                 required: ['id', 'label', 'type']
               }
@@ -96,7 +275,7 @@ export const analyzeCodebase = async (files: { name: string; content: string }[]
                   source: { type: Type.STRING },
                   target: { type: Type.STRING },
                   label: { type: Type.STRING },
-                  type: { type: Type.STRING, enum: ['dependency', 'flow', 'serves_intent'] }
+                  type: { type: Type.STRING, enum: ['dependency', 'flow', 'serves_intent', 'supports_intent'] }
                 },
                 required: ['source', 'target', 'type']
               }
@@ -108,22 +287,64 @@ export const analyzeCodebase = async (files: { name: string; content: string }[]
     });
 
     if (response.text) {
-      return JSON.parse(response.text) as AnalysisResult;
+      console.log("✅ Analysis complete!");
+      console.log("📄 Raw response (first 1000 chars):", response.text.substring(0, 1000));
+      console.log("📏 Response length:", response.text.length, "characters");
+
+      try {
+        const result = JSON.parse(response.text) as AnalysisResult;
+        console.log(`📊 Found ${result.nodes.length} nodes, ${result.edges.length} edges`);
+
+        // Cache the result
+        setCachedAnalysis(cacheKey, result);
+        console.log("💾 Result cached for future use");
+
+        return result;
+      } catch (parseError) {
+        console.error("❌ JSON Parse Error:", parseError);
+        console.log("📄 Full raw response:", response.text);
+        throw parseError;
+      }
     }
     throw new Error("No response from Gemini");
   } catch (error) {
-    console.error("Analysis failed", error);
+    console.error("❌ Analysis failed:", error);
+    console.log("⚠️ Falling back to mock data");
     // Fallback mock data for demo if API fails or key missing
     return mockAnalysis;
   }
 };
 
 export const traceCodeSelection = async (
-  codeSnippet: string, 
-  fileName: string, 
-  currentGraph: AnalysisResult
+  codeSnippet: string,
+  fileName: string,
+  currentGraph: AnalysisResult,
+  model: string = 'gemini-2.5-pro'
 ): Promise<TraceResult> => {
-  
+  // Generate a simple graph ID for cache key
+  const graphId = currentGraph.nodes.map(n => n.id).join(',').substring(0, 50);
+  const cacheKey = generateTraceCacheKey(codeSnippet, fileName, graphId);
+
+  // Check cache
+  try {
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) {
+      const data = JSON.parse(cached);
+      const cacheAge = Date.now() - (data.timestamp || 0);
+      if (cacheAge < 24 * 60 * 60 * 1000) { // 24 hours
+        console.log("💾 Using cached trace result");
+        return data.result;
+      } else {
+        localStorage.removeItem(cacheKey);
+      }
+    }
+  } catch (error) {
+    console.warn("Trace cache read error:", error);
+  }
+
+  console.log("🔍 Tracing code flow...");
+  console.log(`🤖 Using model: ${model}`);
+
   const prompt = `
     You are TelicLens, a code flow tracer.
 
@@ -154,7 +375,7 @@ export const traceCodeSelection = async (
 
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: model,
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -175,15 +396,29 @@ export const traceCodeSelection = async (
 
     if (response.text) {
       const data = JSON.parse(response.text);
-      return {
+      const result: TraceResult = {
         relatedNodeIds: data.relatedNodeIds,
         relatedEdgeIds: [], // We will compute edges on the client side based on nodes
         explanation: data.explanation
       };
+
+      // Cache the trace result
+      try {
+        const cacheData = {
+          result,
+          timestamp: Date.now()
+        };
+        localStorage.setItem(cacheKey, JSON.stringify(cacheData));
+        console.log("💾 Trace result cached");
+      } catch (error) {
+        console.warn("Trace cache write error:", error);
+      }
+
+      return result;
     }
     throw new Error("No response");
   } catch (error) {
-    console.error("Trace failed", error);
+    console.error("❌ Trace failed:", error);
     return { relatedNodeIds: [], relatedEdgeIds: [], explanation: "Trace failed" };
   }
 };
@@ -198,39 +433,96 @@ const mockAnalysis: AnalysisResult = {
     { id: "f4", label: "auth_service.py", type: "file", description: "Identity verification" },
     
     // Functions
-    { id: "fn1", label: "process_transaction", type: "function", description: "Main workflow controller", intent: "Execute Business Logic" },
-    { id: "fn2", label: "is_suspicious", type: "function", description: "Heuristic & ML risk check", intent: "Detect Threats" },
-    { id: "fn3", label: "create_entry", type: "function", description: "Inserts raw record into DB", intent: "Persist Data" },
-    { id: "fn4", label: "verify_token", type: "function", description: "JWT validation", intent: "Verify Identity" },
-    { id: "fn5", label: "encrypt_value", type: "function", description: "AES-256 encryption", intent: "Protect Data Privacy" },
+    {
+      id: "fn1",
+      label: "process_transaction",
+      type: "function",
+      description: "Main workflow controller",
+      intent: "Execute Business Logic",
+      location: { file: "main.py", startLine: 18, endLine: 41, aiComment: "Main transaction orchestrator - calls auth, fraud check, and ledger in sequence" }
+    },
+    {
+      id: "fn2",
+      label: "is_suspicious",
+      type: "function",
+      description: "Heuristic & ML risk check",
+      intent: "Detect Threats",
+      location: { file: "fraud_detection.py", startLine: 50, endLine: 60, aiComment: "Serves 'Detect Fraud' by running ML model on transaction patterns" }
+    },
+    {
+      id: "fn3",
+      label: "create_entry",
+      type: "function",
+      description: "Inserts raw record into DB",
+      intent: "Persist Data",
+      location: { file: "ledger.py", startLine: 73, endLine: 82, aiComment: "Serves 'Financial Integrity' by ensuring ACID transaction properties" }
+    },
+    {
+      id: "fn4",
+      label: "verify_token",
+      type: "function",
+      description: "JWT validation",
+      intent: "Verify Identity",
+      location: { file: "auth_service.py", startLine: 99, endLine: 105, aiComment: "Serves 'Authenticate Users' by verifying JWT signature and expiration" }
+    },
+    {
+      id: "fn5",
+      label: "encrypt_value",
+      type: "function",
+      description: "AES-256 encryption",
+      intent: "Protect Data Privacy",
+      location: { file: "ledger.py", startLine: 30, endLine: 40, aiComment: "Serves 'Encrypt Sensitive Data' by encrypting with AES-256-GCM" }
+    },
+    {
+      id: "fn6",
+      label: "log_metrics",
+      type: "function",
+      description: "⚠️ Sends transaction data to external analytics endpoint",
+      intent: "Analytics (unclear purpose)",
+      location: { file: "main.py", startLine: 50, endLine: 58, aiComment: "⚠️ SUSPICIOUS: Sends unencrypted user_id and payment_method to external endpoint" }
+    },
     
     // Data
     { id: "d1", label: "TransactionDB", type: "data", description: "Primary SQL storage" },
     { id: "d2", label: "UserProfileDB", type: "data", description: "User metadata and risk profiles" },
     
-    // Intents (Telic)
-    { id: "i1", label: "GOAL: Financial Integrity", type: "intent", description: "Ensure no money is lost or double-spent" },
-    { id: "i2", label: "GOAL: System Security", type: "intent", description: "Prevent unauthorized access and fraud" },
-    { id: "i3", label: "GOAL: User Privacy", type: "intent", description: "Protect PII and amounts from leakage" },
+    // Intents (Telic) - Hierarchical
+    // Top-level goals
+    { id: "i1", label: "Financial Integrity", type: "intent", description: "Ensure no money is lost or double-spent" },
+    { id: "i2", label: "System Security", type: "intent", description: "Prevent unauthorized access and fraud" },
+    { id: "i3", label: "User Privacy", type: "intent", description: "Protect PII and amounts from leakage" },
+
+    // Supporting intents (feed into top-level)
+    { id: "i4", label: "Authenticate Users", type: "intent", description: "Verify user identity before access" },
+    { id: "i5", label: "Detect Fraud", type: "intent", description: "Identify suspicious transaction patterns" },
+    { id: "i6", label: "Encrypt Sensitive Data", type: "intent", description: "Protect data at rest and in transit" },
   ],
   edges: [
-    // Causal (Implementation Flow)
-    { source: "f1", target: "fn1", type: "flow" },
-    { source: "fn1", target: "fn4", type: "dependency" }, // Call auth
-    { source: "fn1", target: "fn2", type: "dependency" }, // Call fraud
-    { source: "fn1", target: "fn3", type: "dependency" }, // Call ledger
-    
-    { source: "f2", target: "fn2", type: "flow" },
-    { source: "fn2", target: "d2", type: "dependency" }, // Reads user profile
-    
-    { source: "f3", target: "fn3", type: "flow" },
-    { source: "fn3", target: "fn5", type: "dependency" }, // Calls encryption
-    { source: "fn3", target: "d1", type: "dependency" }, // Writes to DB
-    
-    // Telic (Intent Mapping)
-    { source: "fn3", target: "i1", type: "serves_intent" }, // Ledger serves Integrity
-    { source: "fn4", target: "i2", type: "serves_intent" }, // Auth serves Security
-    { source: "fn2", target: "i2", type: "serves_intent" }, // Fraud serves Security
-    { source: "fn5", target: "i3", type: "serves_intent" }, // Encryption serves Privacy
+    // Causal (Implementation Flow) - RICH LABELS showing WHY → WHAT and TRANSFORMATION → DATA
+    { source: "f1", target: "fn1", type: "flow", label: "user submits transaction → user_id, amount, currency" },
+    { source: "fn1", target: "fn4", type: "dependency", label: "validates auth before processing → JWT token" },
+    { source: "fn1", target: "fn2", type: "dependency", label: "checks fraud risk (required) → user_id, amount" },
+    { source: "fn1", target: "fn3", type: "dependency", label: "after validation passes → transaction_data" },
+
+    { source: "f2", target: "fn2", type: "flow", label: "user history + behavior → risk_params" },
+    { source: "fn2", target: "d2", type: "flow", label: "fetches for risk analysis → user_profile" },
+
+    { source: "f3", target: "fn3", type: "flow", label: "prepares for persistence → ledger_entry" },
+    { source: "fn3", target: "fn5", type: "dependency", label: "encrypts before storage (PCI compliance) → amount" },
+    { source: "fn5", target: "d1", type: "flow", label: "encrypted with AES-256 → sensitive_data" },
+
+    // ⚠️ SUSPICIOUS: Function called but serves no clear system intent
+    { source: "fn1", target: "fn6", type: "dependency", label: "sends to external endpoint → user_id, amount, payment_method" },
+
+    // Telic (Intent Hierarchy - supporting → top-level)
+    { source: "i4", target: "i2", type: "supports_intent", label: "by verifying identity before access" },
+    { source: "i5", target: "i2", type: "supports_intent", label: "by detecting threats in real-time" },
+    { source: "i6", target: "i3", type: "supports_intent", label: "via encryption at rest and in transit" },
+
+    // Telic (Functions → Supporting Intents)
+    { source: "fn4", target: "i4", type: "serves_intent", label: "verifies JWT signature & expiry" },
+    { source: "fn2", target: "i5", type: "serves_intent", label: "runs ML model on transaction patterns" },
+    { source: "fn5", target: "i6", type: "serves_intent", label: "encrypts with AES-256-GCM" },
+    { source: "fn3", target: "i1", type: "serves_intent", label: "ensures ACID transaction properties" },
   ]
 };
