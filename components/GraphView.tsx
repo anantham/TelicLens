@@ -40,7 +40,11 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
 
   // Dagre-based auto layout to reduce crossings
   const computeLayout = useCallback(() => {
-    if (!clusteredData) return;
+    if (!clusteredData || clusteredData.nodes.length === 0) {
+      setPositions({});
+      setViewBox({ x: 0, y: 0, width: 800, height: 600 });
+      return;
+    }
 
     const g = new dagre.graphlib.Graph();
     const isCausal = mode === ViewMode.CAUSAL;
@@ -109,8 +113,12 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
     setPositions(newPositions);
 
     // Size the viewBox to fit the dagre graph, with padding
-    const graphWidth = (g.graph().width || 800) + 160;
-    const graphHeight = (g.graph().height || 600) + 160;
+    const rawWidth = g.graph().width;
+    const rawHeight = g.graph().height;
+    const baseWidth = Number.isFinite(rawWidth) && (rawWidth as number) > 0 ? (rawWidth as number) : 800;
+    const baseHeight = Number.isFinite(rawHeight) && (rawHeight as number) > 0 ? (rawHeight as number) : 600;
+    const graphWidth = baseWidth + 160;
+    const graphHeight = baseHeight + 160;
     setViewBox({ x: 0, y: 0, width: graphWidth, height: graphHeight });
   }, [clusteredData, mode]);
 
