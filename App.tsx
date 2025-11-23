@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { GraphView } from './components/GraphView';
 import { analyzeCodebase, traceCodeSelection, clearAnalysisCache } from './services/geminiService';
-import { CodeFile, AnalysisResult, ViewMode, GraphNode, TraceResult, SourceLocation, TraceMode, FileUpdateHandler } from './types';
+import { CodeFile, AnalysisResult, ViewMode, GraphNode, TraceResult, SourceLocation, TraceMode, FileUpdateHandler, FileRemoveHandler } from './types';
 import { Activity, Target, Loader2, Play, Network, Download, Settings } from 'lucide-react';
 import { exportAsJSON, exportAsTextReport, exportAsMarkdown } from './utils/export';
 import { getEstimatedTime, saveAnalysisMetric, getEstimatedTraceTime, saveTraceMetric } from './utils/analysisMetrics';
@@ -595,6 +595,14 @@ export default function App() {
       }
   };
 
+  const handleRemoveFile: FileRemoveHandler = (fileName) => {
+      setFiles(prev => prev.filter(f => f.name !== fileName));
+      if (activeFile && activeFile.name === fileName) {
+          setActiveFile(null);
+          setSidebarMode('DETAILS');
+      }
+  };
+
   // Calculate security metrics
   const getSecurityMetrics = () => {
     if (!analysis) return null;
@@ -648,6 +656,7 @@ export default function App() {
         onCloseNavigator={closeNavigator}
         showRiskLegend={showRiskLegend}
         onUpdateFile={handleUpdateFile}
+        onRemoveFile={handleRemoveFile}
       />
 
       {/* Main Content */}

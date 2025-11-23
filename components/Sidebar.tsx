@@ -24,6 +24,7 @@ interface SidebarProps {
   onCloseNavigator: () => void;
   showRiskLegend: boolean;
   onUpdateFile: (fileName: string, newContent: string) => void;
+  onRemoveFile: (fileName: string) => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -43,7 +44,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onNavigatePrevious,
   onCloseNavigator,
   showRiskLegend,
-  onUpdateFile
+  onUpdateFile,
+  onRemoveFile
 }) => {
   const [selectedText, setSelectedText] = useState('');
   const [selectionRect, setSelectionRect] = useState<{top: number, left: number} | null>(null);
@@ -559,11 +561,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
               {files.map((file, idx) => (
                 <li
                   key={idx}
-                  onClick={() => onSelectFile(file)}
-                  className={`flex items-center gap-2 text-xs p-1.5 rounded cursor-pointer transition-colors ${activeFile?.name === file.name ? 'bg-neutral-800 text-white' : 'text-neutral-400 hover:bg-neutral-900 hover:text-neutral-300'}`}
+                  className={`flex items-center gap-2 text-xs p-1.5 rounded transition-colors ${activeFile?.name === file.name ? 'bg-neutral-800 text-white' : 'text-neutral-400 hover:bg-neutral-900 hover:text-neutral-300'}`}
                 >
-                  <FileText size={12} className={activeFile?.name === file.name ? "text-blue-400" : "text-neutral-600"} />
-                  <span className="truncate">{file.name}</span>
+                  <div className="flex items-center gap-2 flex-1 cursor-pointer" onClick={() => onSelectFile(file)}>
+                    <FileText size={12} className={activeFile?.name === file.name ? "text-blue-400" : "text-neutral-600"} />
+                    <span className="truncate">{file.name}</span>
+                  </div>
+                  <button
+                    onClick={() => onRemoveFile(file.name)}
+                    className="p-1 text-neutral-500 hover:text-red-400"
+                    title="Remove file"
+                  >
+                    🗑
+                  </button>
                 </li>
               ))}
             </ul>
