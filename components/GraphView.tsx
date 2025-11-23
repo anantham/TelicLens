@@ -783,26 +783,24 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
 
         {/* Node hover popover */}
         {hoveredNode && (
-          <g transform={`translate(${hoveredNode.x}, ${hoveredNode.y - 40})`} className="pointer-events-none">
-            <rect
-              x={-90}
-              y={-30}
-              width={180}
-              height={48}
-              rx={6}
-              fill="#0f172a"
-              stroke="#475569"
-              opacity="0.95"
-            />
-            <text textAnchor="middle" dy="-6" fill="#e2e8f0" fontSize="10" className="font-mono">
-              {hoveredNode.node.label}
-            </text>
-            {hoveredNode.node.description && (
-              <text textAnchor="middle" dy="10" fill="#94a3b8" fontSize="8" className="font-mono">
-                {hoveredNode.node.description.slice(0, 60)}
-              </text>
-            )}
-          </g>
+          <foreignObject
+            x={hoveredNode.x - 150}
+            y={hoveredNode.y - 100}
+            width={300}
+            height={80}
+            pointerEvents="none"
+          >
+            <div className="bg-slate-900/90 text-slate-100 rounded-lg border border-slate-700 shadow-lg px-3 py-2 flex flex-col gap-1">
+              <div className="text-sm font-mono font-semibold text-center">
+                {hoveredNode.node.label}
+              </div>
+              {hoveredNode.node.description && (
+                <div className="text-[11px] font-mono text-slate-400 text-center leading-snug">
+                  {hoveredNode.node.description}
+                </div>
+              )}
+            </div>
+          </foreignObject>
         )}
       </svg>
     </div>
