@@ -145,6 +145,7 @@ export default function App() {
     return localStorage.getItem('selectedModel') || 'gemini-2.5-pro';
   });
   const settingsMenuRef = useRef<HTMLDivElement>(null);
+  const [showRiskLegend, setShowRiskLegend] = useState(true);
 
   // LOCATION NAVIGATOR STATE (for navigating through multiple code locations)
   const [locationNavigator, setLocationNavigator] = useState<{
@@ -610,6 +611,7 @@ export default function App() {
         onNavigateNext={navigateNext}
         onNavigatePrevious={navigatePrevious}
         onCloseNavigator={closeNavigator}
+        showRiskLegend={showRiskLegend}
       />
 
       {/* Main Content */}
@@ -693,6 +695,15 @@ export default function App() {
                       className="w-full px-3 py-2 text-left text-xs bg-red-900/20 hover:bg-red-800/30 text-red-200 rounded border border-red-700/50 transition-colors"
                     >
                       Invalidate cache (force fresh analysis)
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowRiskLegend(true);
+                        setShowSettingsMenu(false);
+                      }}
+                      className="w-full mt-1 px-3 py-2 text-left text-xs bg-neutral-800/60 hover:bg-neutral-700 text-neutral-200 rounded border border-neutral-700/50 transition-colors"
+                    >
+                      Show risk legend
                     </button>
                   </div>
 

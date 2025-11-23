@@ -17,11 +17,12 @@ interface SidebarProps {
   locationNavigator: {
     locations: SourceLocation[];
     currentIndex: number;
-    nodeContext: GraphNode;
-  } | null;
-  onNavigateNext: () => void;
-  onNavigatePrevious: () => void;
-  onCloseNavigator: () => void;
+  nodeContext: GraphNode;
+} | null;
+onNavigateNext: () => void;
+onNavigatePrevious: () => void;
+onCloseNavigator: () => void;
+showRiskLegend: boolean;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -39,7 +40,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   locationNavigator,
   onNavigateNext,
   onNavigatePrevious,
-  onCloseNavigator
+  onCloseNavigator,
+  showRiskLegend
 }) => {
   const [selectedText, setSelectedText] = useState('');
   const [selectionRect, setSelectionRect] = useState<{top: number, left: number} | null>(null);
