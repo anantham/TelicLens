@@ -19,7 +19,7 @@ export interface SourceLocation {
 export interface GraphNode {
   id: string;
   label: string;
-  type: 'file' | 'function' | 'data' | 'intent' | 'event';
+  type: 'file' | 'function' | 'data' | 'intent' | 'event' | 'variable';
   description?: string;
   x?: number;
   y?: number;
@@ -31,6 +31,20 @@ export interface GraphNode {
   // Source location(s)
   location?: SourceLocation;
   locations?: SourceLocation[];  // For nodes that appear in multiple places
+  // Variable-specific metadata
+  variableInfo?: {
+    symbolName: string;        // The actual variable name
+    scope: string;             // Function/class/module scope
+    kind: 'parameter' | 'local' | 'return' | 'field' | 'global'; // Variable kind
+    dataType?: string;         // Inferred or declared type
+    isDef: boolean;            // Is this a definition site?
+    isUse: boolean;            // Is this a use site?
+    parentFunction?: string;   // Parent function node ID
+    trustBoundary?: boolean;   // Crosses trust boundary?
+  };
+  // Clustering metadata for zoom levels
+  clusterId?: string;          // ID of parent cluster (function/file)
+  clusterLevel?: number;       // 0=variable, 1=function, 2=file, 3=intent
 }
 
 export interface GraphEdge {
@@ -41,6 +55,15 @@ export interface GraphEdge {
   type: 'dependency' | 'flow' | 'serves_intent' | 'supports_intent' | 'undermines_intent';
   role?: 'supports' | 'undermines'; // polarity for telic edges
   color?: string; // optional edge color hint from AI (e.g., orange for insecure)
+}
+
+export interface VariableConsistencyReport {
+  orphanDefs: string[];           // Variables defined but never used
+  orphanUses: string[];           // Variables used but never defined (missing defs)
+  unreachableFlows: string[];     // Use sites unreachable from their definition
+  trustBoundaryViolations: string[]; // Variables crossing trust boundaries without sanitization
+  missingNodes: string[];         // Symbols found in AST but missing graph nodes
+  summary: string;                // Human-readable summary of issues
 }
 
 export interface AnalysisResult {
@@ -54,6 +77,13 @@ export interface AnalysisResult {
     contradictions?: string[];   // edges/nodes that undermine parent intent
     closedLoops?: string[][];    // cycles that never reach root telos
     suspiciousCapture?: string[]; // nodes doing data capture/telemetry without serving telos
+  };
+  variableConsistency?: VariableConsistencyReport; // Variable-level consistency check
+  zoomLevels?: {                  // Pre-computed clustering for different zoom levels
+    level0: GraphNode[];          // Variable-level (finest)
+    level1: GraphNode[];          // Function-level clustering
+    level2: GraphNode[];          // File-level clustering
+    level3: GraphNode[];          // Intent-level clustering (coarsest)
   };
 }
 

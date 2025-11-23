@@ -9,6 +9,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@babel/parser": "^7.28.5",
+    "@babel/traverse": "^7.28.5",
+    "@babel/types": "^7.28.5",
     "@google/genai": "^1.30.0",
     "dagre": "^0.8.5",
     "lucide-react": "^0.554.0",
