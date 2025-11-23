@@ -37,6 +37,7 @@ export interface GraphEdge {
   source: string;
   target: string;
   label?: string;
+  reason?: string; // explicit rationale for the edge
   type: 'dependency' | 'flow' | 'serves_intent' | 'supports_intent' | 'undermines_intent';
   role?: 'supports' | 'undermines'; // polarity for telic edges
 }

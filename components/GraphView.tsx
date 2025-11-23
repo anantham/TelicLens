@@ -26,6 +26,7 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
   const [showRiskOverlay, setShowRiskOverlay] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [hoveredEdge, setHoveredEdge] = useState<{ edge: GraphEdge; midX: number; midY: number } | null>(null);
 
   // Dagre-based auto layout to reduce crossings
   const computeLayout = useCallback(() => {
@@ -529,6 +530,8 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
                 strokeWidth={strokeWidth}
                 markerEnd={markerId}
                 strokeDasharray={dashArray || (isTelicEdge ? "3,3" : "")}
+                onMouseEnter={() => setHoveredEdge({ edge, midX, midY })}
+                onMouseLeave={() => setHoveredEdge(null)}
               />
 
               {/* Edge Label - only show in CAUSAL mode and if label exists */}
@@ -554,6 +557,42 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
                   >
                     {edge.label}
                   </text>
+                </g>
+              )}
+
+              {/* Hover Popover */}
+              {hoveredEdge && hoveredEdge.edge === edge && (
+                <g transform={`translate(${midX}, ${midY - 12})`}>
+                  <rect
+                    x={-80}
+                    y={-18}
+                    width={160}
+                    height={36}
+                    rx={4}
+                    fill="#0f172a"
+                    stroke="#475569"
+                    opacity="0.95"
+                  />
+                  <text
+                    textAnchor="middle"
+                    dy="-2"
+                    fill="#e2e8f0"
+                    fontSize="9"
+                    className="font-mono"
+                  >
+                    {edge.label || `${edge.source} -> ${edge.target}`}
+                  </text>
+                  {edge.reason && (
+                    <text
+                      textAnchor="middle"
+                      dy="10"
+                      fill="#94a3b8"
+                      fontSize="8"
+                      className="font-mono"
+                    >
+                      {edge.reason}
+                    </text>
+                  )}
                 </g>
               )}
             </g>

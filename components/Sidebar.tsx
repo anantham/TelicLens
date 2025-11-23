@@ -260,6 +260,53 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </div>
                 )}
 
+                {/* Edges related to this node */}
+                {analysis && selectedNode && (
+                  <div className="space-y-2">
+                    <h3 className="text-xs text-neutral-400 uppercase font-semibold">Edges</h3>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="p-2 bg-neutral-800/60 rounded border border-neutral-800">
+                        <div className="text-[10px] text-neutral-500 uppercase mb-1">Incoming</div>
+                        <div className="space-y-1 max-h-28 overflow-y-auto pr-1">
+                          {analysis.edges.filter(e => e.target === selectedNode.id).map((e, idx) => {
+                            const src = analysis.nodes.find(n => n.id === e.source);
+                            return (
+                              <div key={idx} className="text-[10px] text-neutral-300 leading-snug border border-neutral-700 rounded px-2 py-1 bg-neutral-900/60">
+                                <div className="font-mono text-neutral-200">{src?.label || e.source}</div>
+                                {e.label && <div className="text-neutral-500 italic">“{e.label}”</div>}
+                                {e.reason && <div className="text-neutral-400">Reason: {e.reason}</div>}
+                                {e.role && <div className={`text-[10px] font-semibold ${e.role === 'undermines' ? 'text-red-400' : 'text-green-400'}`}>{e.role}</div>}
+                              </div>
+                            );
+                          })}
+                          {analysis.edges.filter(e => e.target === selectedNode.id).length === 0 && (
+                            <div className="text-[10px] text-neutral-600 italic">No incoming edges</div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="p-2 bg-neutral-800/60 rounded border border-neutral-800">
+                        <div className="text-[10px] text-neutral-500 uppercase mb-1">Outgoing</div>
+                        <div className="space-y-1 max-h-28 overflow-y-auto pr-1">
+                          {analysis.edges.filter(e => e.source === selectedNode.id).map((e, idx) => {
+                            const tgt = analysis.nodes.find(n => n.id === e.target);
+                            return (
+                              <div key={idx} className="text-[10px] text-neutral-300 leading-snug border border-neutral-700 rounded px-2 py-1 bg-neutral-900/60">
+                                <div className="font-mono text-neutral-200">{tgt?.label || e.target}</div>
+                                {e.label && <div className="text-neutral-500 italic">“{e.label}”</div>}
+                                {e.reason && <div className="text-neutral-400">Reason: {e.reason}</div>}
+                                {e.role && <div className={`text-[10px] font-semibold ${e.role === 'undermines' ? 'text-red-400' : 'text-green-400'}`}>{e.role}</div>}
+                              </div>
+                            );
+                          })}
+                          {analysis.edges.filter(e => e.source === selectedNode.id).length === 0 && (
+                            <div className="text-[10px] text-neutral-600 italic">No outgoing edges</div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {selectedNode.intent && (
                   <div className="p-3 bg-purple-900/20 border border-purple-500/30 rounded-lg">
                     <h3 className="text-xs text-purple-400 uppercase font-semibold mb-1 flex items-center gap-2">

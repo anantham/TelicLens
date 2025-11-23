@@ -131,7 +131,7 @@ export const analyzeCodebase = async (files: { name: string; content: string }[]
     - Build a HIERARCHY: supporting intents must connect upward to a root intent via supports_intent edges.
     - Use imperative language: "Authenticate Users", "Prevent Fraud", "Maintain Data Consistency"
 
-    **Edges**: Create FIVE types with **RICH, INVESTIGATIVE labels** (see examples below):
+    **Edges**: Create FIVE types with **RICH, INVESTIGATIVE labels** (see examples below). For EACH edge also provide a "reason" explaining why this connection exists (condition, guard, purpose).
     - 'dependency': Function A calls Function B
       * Label format: "WHY → WHAT" (reason for call → data passed)
       * Examples:
@@ -297,6 +297,7 @@ export const analyzeCodebase = async (files: { name: string; content: string }[]
                   target: { type: Type.STRING },
                   label: { type: Type.STRING },
                   type: { type: Type.STRING, enum: ['dependency', 'flow', 'serves_intent', 'supports_intent', 'undermines_intent'] },
+                  reason: { type: Type.STRING, description: "Explicit rationale/condition for this edge" },
                   role: { type: Type.STRING, description: "Polarity of telic edge", enum: ['supports', 'undermines'] }
                 },
                 required: ['source', 'target', 'type']
