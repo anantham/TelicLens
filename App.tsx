@@ -479,17 +479,17 @@ export default function App() {
       }
 
       // Try to show relevant code in the sidebar if no location metadata is available
-          if (node.type === 'file') {
-              // Find the file by name
-              const matchingFile = files.find(f => f.name === node.label);
-              if (matchingFile) {
-                  setActiveFile(matchingFile);
-                  setSidebarMode('CODE');
-                  console.log(`📄 Opened file: ${node.label}`);
-                  if (!stayTelic) setViewMode(ViewMode.CAUSAL);
-                  return;
-              }
-          } else if (node.type === 'function') {
+      if (node.type === 'file') {
+          // Find the file by name
+          const matchingFile = files.find(f => f.name === node.label);
+          if (matchingFile) {
+              setActiveFile(matchingFile);
+              setSidebarMode('CODE');
+              console.log(`📄 Opened file: ${node.label}`);
+              if (!stayTelic) setViewMode(ViewMode.CAUSAL);
+              return;
+          }
+      } else if (node.type === 'function') {
           // Search for the function name in all files
           const functionName = node.label.replace(/\(\)$/, ''); // Remove trailing ()
           for (const file of files) {
@@ -516,6 +516,34 @@ export default function App() {
           setSidebarMode('DETAILS');
           if (!stayTelic) setViewMode(ViewMode.CAUSAL);
           return;
+      } else if (node.type === 'intent' && analysis) {
+          // Fallback: open first serving function via text search
+          const servingEdges = analysis.edges.filter(e => e.target === node.id && e.type === 'serves_intent');
+          const servingFunctions = servingEdges
+              .map(e => analysis.nodes.find(n => n.id === e.source))
+              .filter(n => n && n.type === 'function') as GraphNode[];
+
+          if (servingFunctions.length > 0) {
+              const firstFunc = servingFunctions[0];
+              const functionName = firstFunc.label.replace(/\(\)$/, '');
+              for (const file of files) {
+                  const patterns = [
+                      `function ${functionName}`,
+                      `def ${functionName}`,
+                      `const ${functionName}`,
+                      `${functionName}(`,
+                      `${functionName} =`,
+                  ];
+                  if (patterns.some(p => file.content.includes(p))) {
+                      setActiveFile(file);
+                      setSidebarMode('CODE');
+                      setHighlightedText(functionName);
+                      if (!stayTelic) setViewMode(ViewMode.CAUSAL);
+                      console.log(`📄 Opened serving function "${functionName}" for intent "${node.label}"`);
+                      return;
+                  }
+              }
+          }
       }
 
       // Default: show details view if no code found
