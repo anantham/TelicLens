@@ -84,7 +84,7 @@ export const analyzeCodebase = async (files: { name: string; content: string }[]
   if (cachedResult) {
     console.log("💾 Using cached analysis (saves API call!)");
     console.log(`📊 Cached: ${cachedResult.nodes.length} nodes, ${cachedResult.edges.length} edges`);
-    return cachedResult;
+    return { ...cachedResult, fromCache: true };
   }
 
   const fileContext = files.map(f => `File: ${f.name}\nContent:\n${f.content}\n---`).join('\n');
@@ -328,7 +328,7 @@ export const analyzeCodebase = async (files: { name: string; content: string }[]
       console.log("📏 Response length:", response.text.length, "characters");
 
       try {
-        const result = JSON.parse(response.text) as AnalysisResult;
+        const result = { ...(JSON.parse(response.text) as AnalysisResult), fromCache: false };
         console.log(`📊 Found ${result.nodes.length} nodes, ${result.edges.length} edges`);
 
         // Cache the result

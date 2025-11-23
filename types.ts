@@ -46,6 +46,7 @@ export interface AnalysisResult {
   nodes: GraphNode[];
   edges: GraphEdge[];
   summary: string;
+  fromCache?: boolean;
   rootIntents?: string[]; // overarching telos entries
   telicAudit?: {
     orphanNodes?: string[];      // nodes/intents without path to root telos

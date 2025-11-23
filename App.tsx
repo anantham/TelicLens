@@ -375,11 +375,14 @@ export default function App() {
         const result = await analyzeCodebase(filesToAnalyze, selectedModel);
         setAnalysis(result);
 
-        // Calculate actual time and save metrics for future estimates
-        const actualTimeSeconds = (Date.now() - startTime) / 1000;
-        saveAnalysisMetric(selectedModel, totalChars, actualTimeSeconds);
-
-        console.log(`✅ Actual time: ${actualTimeSeconds.toFixed(1)}s (estimated: ${estimatedSeconds.toFixed(1)}s)`);
+        // Calculate actual time and save metrics for future estimates (only if not cached)
+        if (!result.fromCache) {
+          const actualTimeSeconds = (Date.now() - startTime) / 1000;
+          saveAnalysisMetric(selectedModel, totalChars, actualTimeSeconds);
+          console.log(`✅ Actual time: ${actualTimeSeconds.toFixed(1)}s (estimated: ${estimatedSeconds.toFixed(1)}s)`);
+        } else {
+          console.log(`✅ Used cached analysis (skipped metrics)`);
+        }
     } catch (err) {
         console.error("Analysis failed:", err);
         alert("Analysis failed. Check console for details.");
