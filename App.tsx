@@ -601,6 +601,7 @@ export default function App() {
       // Default: show details view if no code found
       setSidebarMode('DETAILS');
       if (!stayTelic) setViewMode(ViewMode.CAUSAL);
+      alert(`No source mapping available for "${node.label}". Try selecting a more detailed node or ensure analysis includes locations.`);
   };
 
   const handleFileSelect = (file: CodeFile) => {

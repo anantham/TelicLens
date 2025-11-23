@@ -139,6 +139,7 @@ export const analyzeCodebase = async (files: { name: string; content: string }[]
       * Skip temporary variables and loop counters to reduce noise
       * Include variables that cross trust boundaries (user input → sanitization → database)
       * Tag variables with their scope (function/class/module) and kind (parameter/local/return/field/global)
+    - For ALL nodes (including variables/events), provide source location (file + start/end lines) whenever possible so we can open code on click.
 
     **For each function node, provide:**
     - Clear description of WHAT it does (mechanistic)
