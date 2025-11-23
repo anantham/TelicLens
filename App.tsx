@@ -470,10 +470,11 @@ export default function App() {
       setSelectedNode(node);
       setHighlightedText(null); // Clear previous highlight
 
+      const stayTelic = viewMode === ViewMode.TELIC;
       const locations = collectLocationsForNode(node);
       if (locations.length > 0) {
           startLocationNavigator(locations, node);
-          setViewMode(ViewMode.CAUSAL);
+          if (!stayTelic) setViewMode(ViewMode.CAUSAL);
           return;
       }
 
@@ -485,7 +486,7 @@ export default function App() {
                   setActiveFile(matchingFile);
                   setSidebarMode('CODE');
                   console.log(`📄 Opened file: ${node.label}`);
-                  setViewMode(ViewMode.CAUSAL);
+                  if (!stayTelic) setViewMode(ViewMode.CAUSAL);
                   return;
               }
           } else if (node.type === 'function') {
@@ -506,20 +507,20 @@ export default function App() {
                   setSidebarMode('CODE');
                   setHighlightedText(functionName); // Highlight the function name
                   console.log(`🔍 Found function "${functionName}" in ${file.name}`);
-                  setViewMode(ViewMode.CAUSAL);
+                  if (!stayTelic) setViewMode(ViewMode.CAUSAL);
                   return;
               }
           }
           // Not found in files: fall back to details + graph view
           setActiveFile(null);
           setSidebarMode('DETAILS');
-          setViewMode(ViewMode.CAUSAL);
+          if (!stayTelic) setViewMode(ViewMode.CAUSAL);
           return;
       }
 
       // Default: show details view if no code found
       setSidebarMode('DETAILS');
-      setViewMode(ViewMode.CAUSAL);
+      if (!stayTelic) setViewMode(ViewMode.CAUSAL);
   };
 
   const handleFileSelect = (file: CodeFile) => {
