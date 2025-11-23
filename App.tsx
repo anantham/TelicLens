@@ -149,6 +149,7 @@ export default function App() {
   });
   const settingsMenuRef = useRef<HTMLDivElement>(null);
   const [showRiskLegend, setShowRiskLegend] = useState(true);
+  const [showSecurityBanner, setShowSecurityBanner] = useState(true);
   const [traceEstimatedTime, setTraceEstimatedTime] = useState(0);
   const [traceElapsedTime, setTraceElapsedTime] = useState(0);
   const [traceStartTime, setTraceStartTime] = useState<number | null>(null);
@@ -775,10 +776,19 @@ export default function App() {
                         setShowSettingsMenu(false);
                       }}
                       className="w-full mt-1 px-3 py-2 text-left text-xs bg-neutral-800/60 hover:bg-neutral-700 text-neutral-200 rounded border border-neutral-700/50 transition-colors"
-                    >
-                      Show risk legend
-                    </button>
-                  </div>
+                  >
+                    Show risk legend
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowSecurityBanner(true);
+                      setShowSettingsMenu(false);
+                    }}
+                    className="w-full mt-1 px-3 py-2 text-left text-xs bg-neutral-800/60 hover:bg-neutral-700 text-neutral-200 rounded border border-neutral-700/50 transition-colors"
+                  >
+                    Show security alerts
+                  </button>
+                </div>
 
                   {/* Gemini 2.5 Models */}
                   <div className="px-2 py-1 bg-neutral-950/50 mt-1">
@@ -888,7 +898,7 @@ export default function App() {
         </div>
 
         {/* Security Alert Banner */}
-        {securityMetrics && (securityMetrics.orphanedFunctions.length > 0 || analysis?.telicAudit?.contradictions?.length || analysis?.telicAudit?.suspiciousCapture?.length) && (
+        {showSecurityBanner && securityMetrics && (securityMetrics.orphanedFunctions.length > 0 || analysis?.telicAudit?.contradictions?.length || analysis?.telicAudit?.suspiciousCapture?.length) && (
           <div className="px-6 py-3 bg-yellow-900/30 border-b border-yellow-500/30 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="text-yellow-500 text-xl">⚠️</div>
@@ -935,6 +945,7 @@ export default function App() {
                 onClick={() => {
                   // Dismiss by clearing analysis highlights but keeping data
                   setSelectedNode(null);
+                  setShowSecurityBanner(false);
                 }}
                 className="text-yellow-200 hover:text-white text-lg px-2"
                 aria-label="Dismiss alert"
