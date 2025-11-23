@@ -7,6 +7,9 @@ import { Activity, Target, Loader2, Play, Network, Download, Settings } from 'lu
 import { exportAsJSON, exportAsTextReport, exportAsMarkdown } from './utils/export';
 import { getEstimatedTime, saveAnalysisMetric, getEstimatedTraceTime, saveTraceMetric } from './utils/analysisMetrics';
 
+const MAX_FILES = 30;
+const MAX_TOTAL_BYTES = 500_000; // ~0.5MB of source; adjust as needed
+
 const DEMO_FILES: CodeFile[] = [
   {
     name: 'main.py',
@@ -315,6 +318,24 @@ export default function App() {
        alert("No valid code files found. Please upload supported file types (.py, .js, .ts, etc).");
        e.target.value = '';
        return;
+    }
+
+    // Enforce size/count limits to avoid overwhelming the model
+    const currentBytes = files.reduce((sum, f) => sum + f.content.length, 0);
+    const newBytes = validFiles.reduce((sum, f) => sum + f.size, 0);
+    const totalBytes = currentBytes + newBytes;
+    const totalFiles = files.length + validFiles.length;
+
+    if (totalFiles > MAX_FILES) {
+      alert(`Too many files. Limit is ${MAX_FILES}. You selected ${validFiles.length}, existing ${files.length}.`);
+      e.target.value = '';
+      return;
+    }
+
+    if (totalBytes > MAX_TOTAL_BYTES) {
+      alert(`Code payload too large (${(totalBytes/1024).toFixed(1)} KB). Limit is ${(MAX_TOTAL_BYTES/1024).toFixed(1)} KB. Remove some files or upload smaller selection.`);
+      e.target.value = '';
+      return;
     }
 
     // Helper to read a single file using the modern Blob.text() API
