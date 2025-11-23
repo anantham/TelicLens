@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { AnalysisResult, GraphNode, GraphEdge, ViewMode, TraceResult } from '../types';
 import { ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
+import dagre from 'dagre';
 
 interface GraphViewProps {
   data: AnalysisResult | null;
@@ -10,195 +11,375 @@ interface GraphViewProps {
 }
 
 // Helper to get node radius based on type
-const getNodeRadius = (type: string) => {
-    return type === 'intent' ? 35 : 25;
-};
+  const getNodeRadius = (type: string) => {
+      return type === 'intent' ? 35 : 25;
+  };
 
 export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, traceHighlight }) => {
   const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>({});
-  const [zoom, setZoom] = useState(1);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  const [hoveredNode, setHoveredNode] = useState<GraphNode | null>(null);
-  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+  const [viewBox, setViewBox] = useState({ x: 0, y: 0, width: 800, height: 600 });
+  const [isPanning, setIsPanning] = useState(false);
+  const [panStart, setPanStart] = useState({ x: 0, y: 0 });
+  const [draggingNode, setDraggingNode] = useState<string | null>(null);
+  const [dragOffset, setDragOffset] = useState<{ dx: number; dy: number }>({ dx: 0, dy: 0 });
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [showRiskOverlay, setShowRiskOverlay] = useState(true);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [hoveredEdge, setHoveredEdge] = useState<{ edge: GraphEdge; midX: number; midY: number } | null>(null);
+  const [hoveredNode, setHoveredNode] = useState<{ node: GraphNode; x: number; y: number } | null>(null);
 
-  // Simple auto-layout algorithm
-  useEffect(() => {
+  // Dagre-based auto layout to reduce crossings
+  const computeLayout = useCallback(() => {
     if (!data) return;
 
-    const newPositions: Record<string, { x: number; y: number }> = {};
-    const width = 800; // Canvas coordinate space
-    const height = 600;
-    
-    // Separate nodes by type or role
-    const intents = data.nodes.filter(n => n.type === 'intent');
-    const functions = data.nodes.filter(n => n.type === 'function' || n.type === 'file');
-    const dataStores = data.nodes.filter(n => n.type === 'data');
+    const g = new dagre.graphlib.Graph();
+    const isCausal = mode === ViewMode.CAUSAL;
 
-    if (mode === ViewMode.CAUSAL) {
-      // Causal Mode: Layered Left-to-Right Layout
-      // Files -> Functions -> Data
-      
-      // 1. Files Layer
-      const fileNodes = data.nodes.filter(n => n.type === 'file');
-      fileNodes.forEach((node, i) => {
-          newPositions[node.id] = { x: 100, y: 100 + i * 100 };
-      });
+    g.setGraph({
+      rankdir: isCausal ? 'LR' : 'TB',
+      nodesep: 80,
+      ranksep: 110,
+      edgesep: 60,
+      marginx: 80,
+      marginy: 80
+    });
+    g.setDefaultEdgeLabel(() => ({}));
 
-      // 2. Function Layer (Middle) - Try to stagger
-      const funcNodes = data.nodes.filter(n => n.type === 'function');
-      const cols = Math.ceil(Math.sqrt(funcNodes.length));
-      funcNodes.forEach((node, i) => {
-          const col = i % 2; // 2 columns of functions
-          const row = Math.floor(i / 2);
-          newPositions[node.id] = { x: 350 + col * 150, y: 150 + row * 120 };
-      });
-
-      // 3. Data Layer (Right)
-      dataStores.forEach((node, i) => {
-          newPositions[node.id] = { x: 700, y: 200 + i * 150 };
-      });
-
-      // Intents: Top row in Causal view (just for reference)
-      intents.forEach((node, i) => {
-        newPositions[node.id] = { x: 200 + i * 200, y: 50 };
-      });
-
-    } else {
-      // Telic Mode: Radial/Convergent Layout
-      // Intents in center, Implementations orbiting
-      const centerX = width / 2;
-      const centerY = height / 2;
-      
-      // Place intents in a tight inner circle or line
-      intents.forEach((node, i) => {
-         // If multiple intents, spread them slightly
-         const offset = (i - (intents.length - 1) / 2) * 120;
-         newPositions[node.id] = { x: centerX + offset, y: centerY };
-      });
-      
-      // Place others in orbit
-      const others = [...functions, ...dataStores, ...data.nodes.filter(n => n.type === 'file')];
-      const radius = 280;
-      others.forEach((node, i) => {
-        const angle = (i / others.length) * 2 * Math.PI - (Math.PI / 2); // Start from top
-        newPositions[node.id] = {
-          x: centerX + radius * Math.cos(angle),
-          y: centerY + radius * Math.sin(angle)
-        };
-      });
-    }
-    
-    // Fallback for any unpositioned nodes (e.g. new nodes added dynamically)
-    data.nodes.forEach(n => {
-      if (!newPositions[n.id]) newPositions[n.id] = { x: Math.random() * width, y: Math.random() * height };
+    // Decide which nodes participate in this layout
+    const nodesForLayout = data.nodes.filter(n => {
+      if (isCausal) {
+        return n.type !== 'intent'; // keep code-centric nodes only
+      }
+      // Telic: include intents and functions serving intents
+      if (n.type === 'intent') return true;
+      return data.edges.some(e =>
+        (e.type === 'serves_intent' && (e.source === n.id || e.target === n.id)) ||
+        (e.type === 'supports_intent' && (e.source === n.id || e.target === n.id))
+      );
     });
 
-    setPositions(newPositions);
-  }, [data, mode]);
-
-  // Detect redundant nodes (nodes with no dependents - nothing depends on them)
-  const redundantNodeIds = useMemo(() => {
-    if (!data) return new Set<string>();
-
-    const nodesWithDependents = new Set<string>();
-
-    // Find all nodes that are sources of edges (have things depending on them)
-    data.edges.forEach(edge => {
-      nodesWithDependents.add(edge.source);
+    // Add nodes with approximate size (label length to give dagre more room)
+    nodesForLayout.forEach(node => {
+      const radius = getNodeRadius(node.type);
+      const labelWidth = Math.max(node.label.length * 7, 60);
+      const width = radius * 2 + labelWidth;
+      const height = radius * 2 + 20;
+      g.setNode(node.id, { width, height });
     });
 
-    // Nodes that are NOT sources of any edges are redundant
-    const redundant = new Set<string>();
-    data.nodes.forEach(node => {
-      // Skip intent nodes from redundancy check
-      if (node.type !== 'intent' && !nodesWithDependents.has(node.id)) {
-        redundant.add(node.id);
+    // Choose edges relevant for each mode
+    const layoutEdges = data.edges.filter(edge => {
+      if (isCausal) {
+        return edge.type === 'dependency' || edge.type === 'flow';
+      }
+      return edge.type === 'serves_intent' || edge.type === 'supports_intent';
+    });
+
+    layoutEdges.forEach(edge => {
+      if (g.node(edge.source) && g.node(edge.target)) {
+        g.setEdge(edge.source, edge.target);
       }
     });
 
-    return redundant;
-  }, [data]);
+    dagre.layout(g);
 
-  // Zoom handler
-  const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    const delta = e.deltaY > 0 ? 0.9 : 1.1;
-    setZoom(prev => Math.max(0.1, Math.min(5, prev * delta)));
-  };
+    const newPositions: Record<string, { x: number; y: number }> = {};
+    g.nodes().forEach(id => {
+      const nodeWithPos = g.node(id);
+      if (nodeWithPos) {
+        newPositions[id] = { x: nodeWithPos.x, y: nodeWithPos.y };
+      }
+    });
 
-  // Pan handlers
-  const handleMouseDown = (e: React.MouseEvent) => {
-    setIsDragging(true);
-    setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
-  };
+    // Fallback for any nodes not in dagre layout (place near origin)
+    data.nodes.forEach(n => {
+      if (!newPositions[n.id]) newPositions[n.id] = { x: 50, y: 50 };
+    });
 
-  const handleMouseMove = (e: React.MouseEvent) => {
-    setMousePos({ x: e.clientX, y: e.clientY });
-    if (!isDragging) return;
-    setPan({
-      x: e.clientX - dragStart.x,
-      y: e.clientY - dragStart.y
+    setPositions(newPositions);
+
+    // Size the viewBox to fit the dagre graph, with padding
+    const graphWidth = (g.graph().width || 800) + 160;
+    const graphHeight = (g.graph().height || 600) + 160;
+    setViewBox({ x: 0, y: 0, width: graphWidth, height: graphHeight });
+  }, [data, mode]);
+
+  useEffect(() => {
+    computeLayout();
+  }, [computeLayout]);
+
+  // Zoom handlers
+  const handleZoom = (direction: 'in' | 'out') => {
+    setViewBox(prev => {
+      const factor = direction === 'in' ? 0.8 : 1.25;
+      const newWidth = prev.width * factor;
+      const newHeight = prev.height * factor;
+      const dx = (newWidth - prev.width) / 2;
+      const dy = (newHeight - prev.height) / 2;
+      return {
+        x: prev.x - dx,
+        y: prev.y - dy,
+        width: newWidth,
+        height: newHeight
+      };
     });
   };
 
-  const handleMouseUp = () => {
-    setIsDragging(false);
+  const handleReset = () => {
+    setViewBox({ x: 0, y: 0, width: 800, height: 600 });
   };
 
-  // Reset view
-  const resetView = () => {
-    setZoom(1);
-    setPan({ x: 0, y: 0 });
+  const handleFit = () => {
+    if (!positions || Object.keys(positions).length === 0) return;
+    const xs = Object.values(positions).map(p => p.x);
+    const ys = Object.values(positions).map(p => p.y);
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+    const padding = 80;
+    setViewBox({
+      x: minX - padding,
+      y: minY - padding,
+      width: (maxX - minX) + padding * 2,
+      height: (maxY - minY) + padding * 2
+    });
   };
+
+  const toggleFullscreen = async () => {
+    const el = containerRef.current;
+    if (!el) return;
+    if (!document.fullscreenElement) {
+      try {
+        await el.requestFullscreen();
+        setIsFullscreen(true);
+      } catch (e) {
+        console.warn('Fullscreen request failed', e);
+      }
+    } else {
+      await document.exitFullscreen();
+      setIsFullscreen(false);
+    }
+  };
+
+  // Convert mouse coords to SVG coords (respects current viewBox)
+  const getSvgCoordinates = (e: React.MouseEvent<SVGElement | SVGSVGElement>) => {
+    const svg = svgRef.current;
+    if (!svg) return { x: 0, y: 0 };
+    const point = svg.createSVGPoint();
+    point.x = e.clientX;
+    point.y = e.clientY;
+    const ctm = svg.getScreenCTM();
+    if (!ctm) return { x: 0, y: 0 };
+    const transformed = point.matrixTransform(ctm.inverse());
+    return { x: transformed.x, y: transformed.y };
+  };
+
+  // Recenter to specific node
+  const handleRecenter = (node: GraphNode) => {
+    const pos = positions[node.id];
+    if (!pos) return;
+
+    setViewBox(prev => ({
+      x: pos.x - prev.width / 2,
+      y: pos.y - prev.height / 2,
+      width: prev.width,
+      height: prev.height
+    }));
+  };
+
+  // Mouse wheel zoom
+  const handleWheel = (e: React.WheelEvent<SVGSVGElement>) => {
+    const direction = e.deltaY > 0 ? 'out' : 'in';
+    handleZoom(direction);
+  };
+
+  const handleNodeMouseDown = (e: React.MouseEvent<SVGGElement, MouseEvent>, node: GraphNode) => {
+    e.stopPropagation();
+    const svgPoint = getSvgCoordinates(e);
+    const pos = positions[node.id];
+    if (!pos) return;
+    setDraggingNode(node.id);
+    setDragOffset({ dx: svgPoint.x - pos.x, dy: svgPoint.y - pos.y });
+  };
+
+  // Pan handlers
+  const handleMouseDown = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (draggingNode) return; // ignore if starting a drag on a node
+    if (e.button === 0 && e.target === svgRef.current) { // Left click on SVG background
+      setIsPanning(true);
+      setPanStart({ x: e.clientX, y: e.clientY });
+      e.preventDefault();
+    }
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (draggingNode) {
+      const svgPoint = getSvgCoordinates(e);
+      setPositions(prev => ({
+        ...prev,
+        [draggingNode]: {
+          x: svgPoint.x - dragOffset.dx,
+          y: svgPoint.y - dragOffset.dy
+        }
+      }));
+      return;
+    }
+
+    if (!isPanning) return;
+
+    const dx = e.clientX - panStart.x;
+    const dy = e.clientY - panStart.y;
+
+    const svg = svgRef.current;
+    if (!svg) return;
+
+    const CTM = svg.getScreenCTM();
+    if (!CTM) return;
+
+    const scaleFactor = viewBox.width / svg.clientWidth;
+
+    setViewBox(prev => ({
+      ...prev,
+      x: prev.x - dx * scaleFactor,
+      y: prev.y - dy * scaleFactor
+    }));
+
+    setPanStart({ x: e.clientX, y: e.clientY });
+  };
+
+  const handleMouseUp = () => {
+    if (draggingNode) {
+      setDraggingNode(null);
+      return;
+    }
+    setIsPanning(false);
+  };
+
+  // Risk highlighting sets
+  const riskSets = useMemo(() => {
+    const orphanIds = new Set<string>(data?.telicAudit?.orphanNodes || []);
+    const suspiciousIds = new Set<string>(data?.telicAudit?.suspiciousCapture || []);
+    const contradictionEdgeIds = new Set<string>();
+    (data?.telicAudit?.contradictions || []).forEach(item => {
+      if (item.includes('->')) {
+        contradictionEdgeIds.add(item);
+      } else {
+        // could be node id
+        suspiciousIds.add(item);
+      }
+    });
+    return { orphanIds, suspiciousIds, contradictionEdgeIds };
+  }, [data]);
+
+  // Map of edges that have a reciprocal counterpart (for curved rendering)
+  const reciprocalEdges = useMemo(() => {
+    const set = new Set<string>();
+    const edgePairs = new Set<string>();
+    if (!data) return set;
+    data.edges.forEach(e => {
+      const key = `${e.source}->${e.target}`;
+      edgePairs.add(key);
+    });
+    data.edges.forEach(e => {
+      const forward = `${e.source}->${e.target}`;
+      const reverse = `${e.target}->${e.source}`;
+      if (edgePairs.has(reverse)) {
+        set.add(forward);
+      }
+    });
+    return set;
+  }, [data]);
 
   if (!data) return <div className="flex items-center justify-center h-full text-neutral-500 font-mono text-sm animate-pulse">AWAITING CODEBASE...</div>;
 
   return (
-    <div className="relative w-full h-full overflow-hidden bg-neutral-950 rounded-xl border border-neutral-800 shadow-2xl">
+    <div ref={containerRef} className="relative w-full h-full overflow-hidden bg-neutral-950 rounded-xl border border-neutral-800 shadow-2xl">
+      {/* Mode Badge */}
       <div className="absolute top-4 right-4 px-3 py-1 bg-black/80 backdrop-blur-sm text-[10px] font-bold tracking-widest text-neutral-500 rounded border border-neutral-800 pointer-events-none uppercase z-10">
         MODE: {mode}
       </div>
 
+      {/* Risk Legend */}
+      {showRiskOverlay && (
+        <div className="absolute bottom-4 right-4 px-3 py-2 bg-black/80 backdrop-blur-sm text-[10px] text-neutral-200 rounded border border-red-500/40 z-10 space-y-1">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-red-500" />
+            <span>Undermines / Contradiction</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-red-300" />
+            <span>Orphaned</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-amber-400" />
+            <span>Suspicious Capture</span>
+          </div>
+          <button
+            onClick={() => setShowRiskOverlay(false)}
+            className="w-full mt-1 px-2 py-1 bg-neutral-800 text-[10px] rounded border border-neutral-700 hover:border-neutral-500"
+          >
+            Hide
+          </button>
+        </div>
+      )}
+
       {/* Zoom Controls */}
       <div className="absolute top-4 left-4 flex flex-col gap-2 z-10">
         <button
-          onClick={() => setZoom(prev => Math.min(5, prev * 1.2))}
-          className="p-2 bg-black/80 backdrop-blur-sm border border-neutral-800 rounded hover:bg-neutral-800 transition-colors"
-          title="Zoom In"
+          onClick={() => handleZoom('in')}
+          className="p-2 bg-black/80 hover:bg-neutral-800 backdrop-blur-sm text-neutral-400 hover:text-white rounded border border-neutral-800 transition-colors"
+          title="Zoom In (or use mouse wheel)"
         >
-          <ZoomIn size={16} className="text-neutral-400" />
+          <ZoomIn size={16} />
         </button>
         <button
-          onClick={() => setZoom(prev => Math.max(0.1, prev * 0.8))}
-          className="p-2 bg-black/80 backdrop-blur-sm border border-neutral-800 rounded hover:bg-neutral-800 transition-colors"
-          title="Zoom Out"
+          onClick={() => handleZoom('out')}
+          className="p-2 bg-black/80 hover:bg-neutral-800 backdrop-blur-sm text-neutral-400 hover:text-white rounded border border-neutral-800 transition-colors"
+          title="Zoom Out (or use mouse wheel)"
         >
-          <ZoomOut size={16} className="text-neutral-400" />
+          <ZoomOut size={16} />
         </button>
         <button
-          onClick={resetView}
-          className="p-2 bg-black/80 backdrop-blur-sm border border-neutral-800 rounded hover:bg-neutral-800 transition-colors"
+          onClick={handleReset}
+          className="p-2 bg-black/80 hover:bg-neutral-800 backdrop-blur-sm text-neutral-400 hover:text-white rounded border border-neutral-800 transition-colors"
           title="Reset View"
         >
-          <Maximize2 size={16} className="text-neutral-400" />
+          <Maximize2 size={16} />
         </button>
-        <div className="px-2 py-1 bg-black/80 backdrop-blur-sm border border-neutral-800 rounded text-[10px] text-neutral-500 text-center font-mono">
-          {Math.round(zoom * 100)}%
-        </div>
+        <button
+          onClick={handleFit}
+          className="p-2 bg-black/80 hover:bg-neutral-800 backdrop-blur-sm text-neutral-400 hover:text-white rounded border border-neutral-800 transition-colors text-[10px]"
+          title="Fit graph to view"
+        >
+          FIT
+        </button>
+        <button
+          onClick={toggleFullscreen}
+          className="p-2 bg-black/80 hover:bg-neutral-800 backdrop-blur-sm text-neutral-400 hover:text-white rounded border border-neutral-800 transition-colors text-[10px]"
+          title="Toggle fullscreen"
+        >
+          {isFullscreen ? 'EXIT' : 'FULL'}
+        </button>
       </div>
-      
+
+      {/* Instruction Hint */}
+      <div className="absolute bottom-4 right-4 px-3 py-1 bg-black/60 backdrop-blur-sm text-[9px] text-neutral-600 rounded border border-neutral-800 pointer-events-none z-10">
+        💡 Mouse wheel to zoom • Drag to pan • Double-click node to recenter
+      </div>
+
       <svg
+        ref={svgRef}
         className="w-full h-full select-none"
-        viewBox={`${-pan.x / zoom} ${-pan.y / zoom} ${800 / zoom} ${600 / zoom}`}
+        viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`}
         preserveAspectRatio="xMidYMid meet"
         onWheel={handleWheel}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
-        style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+        style={{ cursor: isPanning ? 'grabbing' : 'grab' }}
       >
         <defs>
           {/* Standard Gray Arrow (Causal/Dependency) */}
@@ -254,12 +435,17 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
 
           // Styling based on edge type
           const isTelicEdge = edge.type === 'serves_intent';
+          const isSupportsIntentEdge = edge.type === 'supports_intent';
+          const isUnderminesIntentEdge = edge.type === 'undermines_intent';
           const isFlowEdge = edge.type === 'flow';
-          
+          const edgeId = `${edge.source}->${edge.target}`;
+          const isContradiction = riskSets.contradictionEdgeIds.has(edgeId);
+
           let strokeColor = '#333';
           let markerId = 'url(#arrowhead)';
           let strokeWidth = 1;
           let opacity = 1;
+          let dashArray: string | undefined;
 
           if (mode === ViewMode.TELIC) {
              if (isTelicEdge) {
@@ -267,14 +453,32 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
                  markerId = 'url(#arrowhead-telic)';
                  strokeWidth = 1.5;
                  opacity = 1;
+             } else if (isSupportsIntentEdge) {
+                 // Intent hierarchy edges - brighter purple, thicker
+                 strokeColor = '#c084fc'; // Lighter purple for intent-to-intent
+                 markerId = 'url(#arrowhead-telic)';
+                 strokeWidth = 2;
+                 opacity = 1;
+             } else if (isUnderminesIntentEdge) {
+                 strokeColor = '#ef4444'; // Red for conflicts
+                 markerId = 'url(#arrowhead)';
+                 strokeWidth = 2.5;
+                 opacity = 1;
+                 dashArray = '5,4';
+              } else if (isContradiction) {
+                 strokeColor = '#ef4444';
+                 markerId = 'url(#arrowhead)';
+                 strokeWidth = 2.5;
+                 opacity = 1;
+                 dashArray = '5,4';
              } else {
                  strokeColor = '#333';
                  opacity = 0.15; // Fade out non-telic edges
              }
           } else {
              // Causal Mode
-             if (isTelicEdge) {
-                 opacity = 0; // Hide intent edges in causal mode mostly
+             if (isTelicEdge || isSupportsIntentEdge || isUnderminesIntentEdge) {
+                 opacity = 0; // Hide all intent edges in causal mode
              } else if (isFlowEdge) {
                  strokeColor = '#3b82f6'; // Blue
                  markerId = 'url(#arrowhead-flow)';
@@ -283,11 +487,14 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
           }
           
           // TRACE LOGIC:
-          // If a trace is active, dim edges that aren't part of the trace nodes
+          // If a trace is active, dim edges not in traceEdgeIds (or not connecting traced nodes)
           if (traceHighlight && opacity > 0) {
+             const edgeId = `${edge.source}->${edge.target}`;
+             const isEdgeTraced = traceHighlight.relatedEdgeIds.includes(edgeId);
              const isStartInTrace = traceHighlight.relatedNodeIds.includes(edge.source);
              const isEndInTrace = traceHighlight.relatedNodeIds.includes(edge.target);
-             if (isStartInTrace && isEndInTrace) {
+
+             if (isEdgeTraced || (isStartInTrace && isEndInTrace)) {
                  opacity = 1;
                  strokeWidth = 2; // Thicken tracing edges
              } else {
@@ -297,29 +504,98 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
 
           if (opacity === 0) return null;
 
-          // Create curved path instead of straight line
-          // Use quadratic bezier curve for smoother flow
-          const midX = (x1 + x2) / 2;
-          const midY = (y1 + y2) / 2;
+          // Curve reciprocal edges to avoid overlap
+          const hasReciprocal = reciprocalEdges.has(edgeId);
+          const curveOffset = hasReciprocal ? 25 : 0;
+          const nx = hasReciprocal ? (-(y2 - y1)) : 0;
+          const ny = hasReciprocal ? (x2 - x1) : 0;
+          const len = Math.hypot(nx, ny) || 1;
+          const cx = (x1 + x2) / 2 + (nx / len) * curveOffset;
+          const cy = (y1 + y2) / 2 + (ny / len) * curveOffset;
 
-          // Calculate perpendicular offset for curve control point
-          const perpAngle = angle + Math.PI / 2;
-          const curveStrength = 30; // How pronounced the curve is
-          const controlX = midX + Math.cos(perpAngle) * curveStrength;
-          const controlY = midY + Math.sin(perpAngle) * curveStrength;
+          // Quadratic midpoint for label
+          const midX = (x1 + cx + x2) / 3;
+          const midY = (y1 + cy + y2) / 3;
 
-          const pathData = `M ${x1} ${y1} Q ${controlX} ${controlY}, ${x2} ${y2}`;
+          // Calculate label rotation to align with edge
+          const labelAngle = Math.atan2(dy, dx) * (180 / Math.PI);
+          // Keep label readable (don't flip upside down)
+          const normalizedAngle = labelAngle > 90 || labelAngle < -90 ? labelAngle + 180 : labelAngle;
 
           return (
             <g key={i} opacity={opacity} className="transition-all duration-500">
               <path
-                d={pathData}
+                d={`M ${x1} ${y1} Q ${cx} ${cy} ${x2} ${y2}`}
                 fill="none"
                 stroke={strokeColor}
                 strokeWidth={strokeWidth}
                 markerEnd={markerId}
-                strokeDasharray={isTelicEdge ? "3,3" : ""}
+                strokeDasharray={dashArray || (isTelicEdge ? "3,3" : "")}
+                onMouseEnter={() => setHoveredEdge({ edge, midX, midY })}
+                onMouseLeave={() => setHoveredEdge(null)}
               />
+
+              {/* Edge Label - only show in CAUSAL mode and if label exists */}
+              {edge.label && mode === ViewMode.CAUSAL && !isTelicEdge && (
+                <g transform={`translate(${midX}, ${midY})`}>
+                  {/* Background rectangle for readability */}
+                  <rect
+                    x={-edge.label.length * 2.5}
+                    y={-8}
+                    width={edge.label.length * 5}
+                    height={14}
+                    fill="#000000"
+                    opacity="0.8"
+                    rx="2"
+                  />
+                  <text
+                    textAnchor="middle"
+                    dy="3"
+                    fill={isFlowEdge ? "#60a5fa" : "#737373"}
+                    fontSize="8"
+                    className="font-mono font-semibold pointer-events-none"
+                    transform={`rotate(${normalizedAngle})`}
+                  >
+                    {edge.label}
+                  </text>
+                </g>
+              )}
+
+              {/* Hover Popover */}
+              {hoveredEdge && hoveredEdge.edge === edge && (
+                <g transform={`translate(${midX}, ${midY - 12})`}>
+                  <rect
+                    x={-80}
+                    y={-18}
+                    width={160}
+                    height={36}
+                    rx={4}
+                    fill="#0f172a"
+                    stroke="#475569"
+                    opacity="0.95"
+                  />
+                  <text
+                    textAnchor="middle"
+                    dy="-2"
+                    fill="#e2e8f0"
+                    fontSize="9"
+                    className="font-mono"
+                  >
+                    {edge.label || `${edge.source} -> ${edge.target}`}
+                  </text>
+                  {edge.reason && (
+                    <text
+                      textAnchor="middle"
+                      dy="10"
+                      fill="#94a3b8"
+                      fontSize="8"
+                      className="font-mono"
+                    >
+                      {edge.reason}
+                    </text>
+                  )}
+                </g>
+              )}
             </g>
           );
         })}
@@ -330,18 +606,15 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
           if (!pos) return null;
           
           const isIntent = node.type === 'intent';
+          const isOrphan = riskSets.orphanIds.has(node.id);
+          const isSuspicious = riskSets.suspiciousIds.has(node.id);
           const radius = getNodeRadius(node.type);
-          const isRedundant = redundantNodeIds.has(node.id);
-
+          
           // Colors
           let fillColor = '#171717';
           let strokeColor = '#404040';
-
-          if (isRedundant) {
-              // Redundant nodes get red highlighting
-              fillColor = '#450a0a';
-              strokeColor = '#ef4444';
-          } else if (node.type === 'intent') {
+          
+          if (node.type === 'intent') {
               fillColor = '#2e1065';
               strokeColor = '#a855f7';
           } else if (node.type === 'data') {
@@ -353,21 +626,20 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
           } else if (node.type === 'file') {
               fillColor = '#171717';
               strokeColor = '#737373';
+          } else if (node.type === 'event') {
+              fillColor = '#0b1f2d';
+              strokeColor = '#14b8a6';
           }
           
-          // Base Opacity
+          // Base Opacity - hide intent nodes in CAUSAL mode
           let opacity = 1;
 
-          // In CAUSAL mode, hide intent nodes
           if (mode === ViewMode.CAUSAL && isIntent) {
-              opacity = 0;
+              opacity = 0; // Hide intent nodes in causal view
+          } else if (mode === ViewMode.TELIC && !isIntent) {
+              opacity = 0.6; // Dim non-intent nodes in telic view
           }
 
-          // In TELIC mode, dim non-intent nodes slightly
-          if (mode === ViewMode.TELIC && !isIntent) {
-              opacity = 0.6;
-          }
-          
           // Trace Opacity Override
           if (traceHighlight) {
               if (traceHighlight.relatedNodeIds.includes(node.id)) {
@@ -377,18 +649,25 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
               }
           }
 
-          // Skip rendering if completely invisible
-          if (opacity === 0) return null;
+          // Don't render nodes with 0 opacity (unless in trace mode)
+          if (opacity === 0 && !traceHighlight) return null;
 
           const filter = isIntent && mode === ViewMode.TELIC ? "url(#glow-purple)" : undefined;
+
+          // Risk styling
+          const nodeStroke = isSuspicious ? '#ef4444' : strokeColor;
+          const nodeFill = isOrphan ? '#1f2937' : fillColor;
+          const nodeStrokeWidth = isSuspicious ? 3 : (isIntent ? 2 : 1.5);
 
           return (
             <g
               key={node.id}
               transform={`translate(${pos.x}, ${pos.y})`}
-              className="cursor-pointer transition-all duration-300 group"
+              className="cursor-grab active:cursor-grabbing transition-all duration-300 group"
+              onMouseDown={(e) => handleNodeMouseDown(e, node)}
               onClick={() => onNodeClick(node)}
-              onMouseEnter={() => setHoveredNode(node)}
+              onDoubleClick={() => handleRecenter(node)}
+              onMouseEnter={() => setHoveredNode({ node, x: pos.x, y: pos.y })}
               onMouseLeave={() => setHoveredNode(null)}
               style={{ opacity }}
             >
@@ -397,9 +676,9 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
               
               <circle 
                 r={radius} 
-                fill={fillColor} 
-                stroke={strokeColor} 
-                strokeWidth={isIntent ? 2 : 1.5} 
+                fill={nodeFill} 
+                stroke={nodeStroke} 
+                strokeWidth={nodeStrokeWidth} 
                 filter={filter}
                 className="transition-transform duration-200 group-hover:scale-105" 
               />
@@ -408,7 +687,7 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
               <text 
                   y={5} 
                   textAnchor="middle" 
-                  fill={isIntent ? "#e9d5ff" : "#d4d4d4"} 
+                  fill={isIntent ? "#e9d5ff" : (isSuspicious ? "#fca5a5" : "#d4d4d4")} 
                   fontSize={isIntent ? "10" : "9"} 
                   className="font-mono pointer-events-none font-semibold"
               >
@@ -422,51 +701,40 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
                 </text>
               )}
               {!isIntent && (
-                <text y={-radius - 5} textAnchor="middle" fill={strokeColor} fontSize="7" className="uppercase tracking-wider opacity-0 group-hover:opacity-100 transition-opacity">
+                <text y={-radius - 5} textAnchor="middle" fill={nodeStroke} fontSize="7" className="uppercase tracking-wider opacity-0 group-hover:opacity-100 transition-opacity">
                   {node.type}
+                  {isOrphan ? ' • ORPHAN' : ''}
+                  {isSuspicious ? ' • RISK' : ''}
                 </text>
               )}
             </g>
           );
         })}
+
+        {/* Node hover popover */}
+        {hoveredNode && (
+          <g transform={`translate(${hoveredNode.x}, ${hoveredNode.y - 40})`} className="pointer-events-none">
+            <rect
+              x={-90}
+              y={-30}
+              width={180}
+              height={48}
+              rx={6}
+              fill="#0f172a"
+              stroke="#475569"
+              opacity="0.95"
+            />
+            <text textAnchor="middle" dy="-6" fill="#e2e8f0" fontSize="10" className="font-mono">
+              {hoveredNode.node.label}
+            </text>
+            {hoveredNode.node.description && (
+              <text textAnchor="middle" dy="10" fill="#94a3b8" fontSize="8" className="font-mono">
+                {hoveredNode.node.description.slice(0, 60)}
+              </text>
+            )}
+          </g>
+        )}
       </svg>
-
-      {/* Hover Tooltip */}
-      {hoveredNode && (
-        <div
-          className="absolute pointer-events-none z-20 bg-black/95 backdrop-blur-sm border border-neutral-700 rounded-lg p-3 shadow-2xl max-w-xs"
-          style={{
-            left: mousePos.x + 15,
-            top: mousePos.y + 15,
-          }}
-        >
-          <div className="font-mono text-sm font-bold text-white mb-1">
-            {hoveredNode.label}
-          </div>
-
-          {hoveredNode.type && (
-            <div className="text-[10px] uppercase tracking-wider text-neutral-400 mb-2">
-              {hoveredNode.type}
-              {redundantNodeIds.has(hoveredNode.id) && (
-                <span className="ml-2 text-red-400 font-bold">⚠ REDUNDANT</span>
-              )}
-            </div>
-          )}
-
-          {mode === ViewMode.TELIC && hoveredNode.intent && (
-            <div className="text-xs text-purple-300 mb-2 border-l-2 border-purple-500 pl-2">
-              <div className="text-[10px] uppercase text-purple-400 mb-1">Functionality:</div>
-              {hoveredNode.intent}
-            </div>
-          )}
-
-          {hoveredNode.description && (
-            <div className="text-xs text-neutral-300 mt-2">
-              {hoveredNode.description}
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 };
