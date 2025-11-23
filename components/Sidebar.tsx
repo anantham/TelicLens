@@ -49,7 +49,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   // Drag & Drop state
   const [isDragging, setIsDragging] = useState(false);
   const [dragCounter, setDragCounter] = useState(0);
-  const [traceMode, setTraceMode] = useState<TraceMode>('data');
 
   const currentLocation = locationNavigator ? locationNavigator.locations[locationNavigator.currentIndex] : null;
   const safeFileName = activeFile ? activeFile.name.replace(/[^a-zA-Z0-9_-]/g, '-') : '';
@@ -136,13 +135,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Floating Trace Button */}
       {selectedText && selectionRect && sidebarMode === 'CODE' && (
         <div 
-            className="fixed z-50 animate-in zoom-in-50 duration-200"
+            className="fixed z-50 animate-in zoom-in-50 duration-200 space-y-1"
             style={{ top: selectionRect.top, left: selectionRect.left }}
         >
             <button 
                 onClick={(e) => {
                     e.stopPropagation();
-                    onTrace(selectedText, traceMode);
+                    onTrace(selectedText, 'data');
                     setSelectedText('');
                     setSelectionRect(null);
                     window.getSelection()?.removeAllRanges();
@@ -150,7 +149,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded shadow-xl border border-blue-400"
             >
                 <Network size={12} />
-                {traceMode === 'journey' ? 'TRACE JOURNEY' : 'TRACE FLOW'}
+                TRACE CODE FLOW
+            </button>
+            <button 
+                onClick={(e) => {
+                    e.stopPropagation();
+                    onTrace(selectedText, 'journey');
+                    setSelectedText('');
+                    setSelectionRect(null);
+                    window.getSelection()?.removeAllRanges();
+                }}
+                className="flex items-center gap-2 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded shadow-xl border border-emerald-400"
+            >
+                <Network size={12} />
+                TRACE USER JOURNEY
             </button>
         </div>
       )}
@@ -164,24 +176,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <p className="text-xs text-neutral-500">AI Flow & Journey Inspector</p>
       </div>
 
-      {/* Trace Mode Toggle */}
-      <div className="flex items-center gap-2 px-4 py-2 border-b border-neutral-800 bg-neutral-950/60">
-        <span className="text-[10px] text-neutral-500 uppercase font-semibold">Trace Mode</span>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setTraceMode('data')}
-            className={`px-2 py-1 text-[10px] rounded border ${traceMode === 'data' ? 'border-blue-500 text-blue-200 bg-blue-900/30' : 'border-neutral-700 text-neutral-400 hover:border-neutral-500'}`}
-          >
-            Data Flow
-          </button>
-          <button
-            onClick={() => setTraceMode('journey')}
-            className={`px-2 py-1 text-[10px] rounded border ${traceMode === 'journey' ? 'border-green-500 text-green-200 bg-green-900/30' : 'border-neutral-700 text-neutral-400 hover:border-neutral-500'}`}
-          >
-            User Journey
-          </button>
-        </div>
-      </div>
 
       {/* Tab Switcher */}
       <div className="flex border-b border-neutral-800">
