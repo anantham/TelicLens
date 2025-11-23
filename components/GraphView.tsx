@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useState, useRef } from 'react';
+import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { AnalysisResult, GraphNode, GraphEdge, ViewMode, TraceResult } from '../types';
 import { ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
+import dagre from 'dagre';
 
 interface GraphViewProps {
   data: AnalysisResult | null;
@@ -19,87 +20,89 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
   const [viewBox, setViewBox] = useState({ x: 0, y: 0, width: 800, height: 600 });
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
+  const [draggingNode, setDraggingNode] = useState<string | null>(null);
+  const [dragOffset, setDragOffset] = useState<{ dx: number; dy: number }>({ dx: 0, dy: 0 });
   const svgRef = useRef<SVGSVGElement>(null);
 
-  // Simple auto-layout algorithm
-  useEffect(() => {
+  // Dagre-based auto layout to reduce crossings
+  const computeLayout = useCallback(() => {
     if (!data) return;
 
+    const g = new dagre.graphlib.Graph();
+    const isCausal = mode === ViewMode.CAUSAL;
+
+    g.setGraph({
+      rankdir: isCausal ? 'LR' : 'TB',
+      nodesep: 80,
+      ranksep: 110,
+      edgesep: 60,
+      marginx: 80,
+      marginy: 80
+    });
+    g.setDefaultEdgeLabel(() => ({}));
+
+    // Decide which nodes participate in this layout
+    const nodesForLayout = data.nodes.filter(n => {
+      if (isCausal) {
+        return n.type !== 'intent'; // keep code-centric nodes only
+      }
+      // Telic: include intents and functions serving intents
+      if (n.type === 'intent') return true;
+      return data.edges.some(e =>
+        (e.type === 'serves_intent' && (e.source === n.id || e.target === n.id)) ||
+        (e.type === 'supports_intent' && (e.source === n.id || e.target === n.id))
+      );
+    });
+
+    // Add nodes with approximate size (label length to give dagre more room)
+    nodesForLayout.forEach(node => {
+      const radius = getNodeRadius(node.type);
+      const labelWidth = Math.max(node.label.length * 7, 60);
+      const width = radius * 2 + labelWidth;
+      const height = radius * 2 + 20;
+      g.setNode(node.id, { width, height });
+    });
+
+    // Choose edges relevant for each mode
+    const layoutEdges = data.edges.filter(edge => {
+      if (isCausal) {
+        return edge.type === 'dependency' || edge.type === 'flow';
+      }
+      return edge.type === 'serves_intent' || edge.type === 'supports_intent';
+    });
+
+    layoutEdges.forEach(edge => {
+      if (g.node(edge.source) && g.node(edge.target)) {
+        g.setEdge(edge.source, edge.target);
+      }
+    });
+
+    dagre.layout(g);
+
     const newPositions: Record<string, { x: number; y: number }> = {};
-    const width = 800; // Canvas coordinate space
-    const height = 600;
-    
-    // Separate nodes by type or role
-    const intents = data.nodes.filter(n => n.type === 'intent');
-    const functions = data.nodes.filter(n => n.type === 'function' || n.type === 'file');
-    const dataStores = data.nodes.filter(n => n.type === 'data');
+    g.nodes().forEach(id => {
+      const nodeWithPos = g.node(id);
+      if (nodeWithPos) {
+        newPositions[id] = { x: nodeWithPos.x, y: nodeWithPos.y };
+      }
+    });
 
-    if (mode === ViewMode.CAUSAL) {
-      // Causal Mode: Layered Left-to-Right Layout
-      // Files -> Functions -> Data
-      
-      // 1. Files Layer
-      const fileNodes = data.nodes.filter(n => n.type === 'file');
-      fileNodes.forEach((node, i) => {
-          newPositions[node.id] = { x: 100, y: 100 + i * 100 };
-      });
-
-      // 2. Function Layer (Middle) - Try to stagger
-      const funcNodes = data.nodes.filter(n => n.type === 'function');
-      const cols = Math.ceil(Math.sqrt(funcNodes.length));
-      funcNodes.forEach((node, i) => {
-          const col = i % 2; // 2 columns of functions
-          const row = Math.floor(i / 2);
-          newPositions[node.id] = { x: 350 + col * 150, y: 150 + row * 120 };
-      });
-
-      // 3. Data Layer (Right)
-      dataStores.forEach((node, i) => {
-          newPositions[node.id] = { x: 700, y: 200 + i * 150 };
-      });
-
-      // Intents: Top row in Causal view (just for reference)
-      intents.forEach((node, i) => {
-        newPositions[node.id] = { x: 200 + i * 200, y: 50 };
-      });
-
-    } else {
-      // Telic Mode: Radial/Convergent Layout
-      // Intents in center, Implementations orbiting
-      const centerX = width / 2;
-      const centerY = height / 2;
-      
-      // Place intents in a tight inner circle or line
-      intents.forEach((node, i) => {
-         // If multiple intents, spread them slightly
-         const offset = (i - (intents.length - 1) / 2) * 120;
-         newPositions[node.id] = { x: centerX + offset, y: centerY };
-      });
-      
-      // Place others in orbit
-      const others = [...functions, ...dataStores, ...data.nodes.filter(n => n.type === 'file')];
-      const radius = 280;
-      others.forEach((node, i) => {
-        const angle = (i / others.length) * 2 * Math.PI - (Math.PI / 2); // Start from top
-        newPositions[node.id] = {
-          x: centerX + radius * Math.cos(angle),
-          y: centerY + radius * Math.sin(angle)
-        };
-      });
-    }
-    
-    // Fallback for any unpositioned nodes (e.g. new nodes added dynamically)
+    // Fallback for any nodes not in dagre layout (place near origin)
     data.nodes.forEach(n => {
-      if (!newPositions[n.id]) newPositions[n.id] = { x: Math.random() * width, y: Math.random() * height };
+      if (!newPositions[n.id]) newPositions[n.id] = { x: 50, y: 50 };
     });
 
     setPositions(newPositions);
+
+    // Size the viewBox to fit the dagre graph, with padding
+    const graphWidth = (g.graph().width || 800) + 160;
+    const graphHeight = (g.graph().height || 600) + 160;
+    setViewBox({ x: 0, y: 0, width: graphWidth, height: graphHeight });
   }, [data, mode]);
 
-  // Reset viewBox when mode changes
   useEffect(() => {
-    setViewBox({ x: 0, y: 0, width: 800, height: 600 });
-  }, [mode]);
+    computeLayout();
+  }, [computeLayout]);
 
   // Zoom handlers
   const handleZoom = (direction: 'in' | 'out') => {
@@ -122,6 +125,19 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
     setViewBox({ x: 0, y: 0, width: 800, height: 600 });
   };
 
+  // Convert mouse coords to SVG coords (respects current viewBox)
+  const getSvgCoordinates = (e: React.MouseEvent<SVGElement | SVGSVGElement>) => {
+    const svg = svgRef.current;
+    if (!svg) return { x: 0, y: 0 };
+    const point = svg.createSVGPoint();
+    point.x = e.clientX;
+    point.y = e.clientY;
+    const ctm = svg.getScreenCTM();
+    if (!ctm) return { x: 0, y: 0 };
+    const transformed = point.matrixTransform(ctm.inverse());
+    return { x: transformed.x, y: transformed.y };
+  };
+
   // Recenter to specific node
   const handleRecenter = (node: GraphNode) => {
     const pos = positions[node.id];
@@ -142,8 +158,18 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
     handleZoom(direction);
   };
 
+  const handleNodeMouseDown = (e: React.MouseEvent<SVGGElement, MouseEvent>, node: GraphNode) => {
+    e.stopPropagation();
+    const svgPoint = getSvgCoordinates(e);
+    const pos = positions[node.id];
+    if (!pos) return;
+    setDraggingNode(node.id);
+    setDragOffset({ dx: svgPoint.x - pos.x, dy: svgPoint.y - pos.y });
+  };
+
   // Pan handlers
   const handleMouseDown = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (draggingNode) return; // ignore if starting a drag on a node
     if (e.button === 0 && e.target === svgRef.current) { // Left click on SVG background
       setIsPanning(true);
       setPanStart({ x: e.clientX, y: e.clientY });
@@ -152,6 +178,18 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
   };
 
   const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (draggingNode) {
+      const svgPoint = getSvgCoordinates(e);
+      setPositions(prev => ({
+        ...prev,
+        [draggingNode]: {
+          x: svgPoint.x - dragOffset.dx,
+          y: svgPoint.y - dragOffset.dy
+        }
+      }));
+      return;
+    }
+
     if (!isPanning) return;
 
     const dx = e.clientX - panStart.x;
@@ -175,6 +213,10 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
   };
 
   const handleMouseUp = () => {
+    if (draggingNode) {
+      setDraggingNode(null);
+      return;
+    }
     setIsPanning(false);
   };
 
@@ -283,8 +325,9 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
 
           // Styling based on edge type
           const isTelicEdge = edge.type === 'serves_intent';
+          const isSupportsIntentEdge = edge.type === 'supports_intent';
           const isFlowEdge = edge.type === 'flow';
-          
+
           let strokeColor = '#333';
           let markerId = 'url(#arrowhead)';
           let strokeWidth = 1;
@@ -296,14 +339,20 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
                  markerId = 'url(#arrowhead-telic)';
                  strokeWidth = 1.5;
                  opacity = 1;
+             } else if (isSupportsIntentEdge) {
+                 // Intent hierarchy edges - brighter purple, thicker
+                 strokeColor = '#c084fc'; // Lighter purple for intent-to-intent
+                 markerId = 'url(#arrowhead-telic)';
+                 strokeWidth = 2;
+                 opacity = 1;
              } else {
                  strokeColor = '#333';
                  opacity = 0.15; // Fade out non-telic edges
              }
           } else {
              // Causal Mode
-             if (isTelicEdge) {
-                 opacity = 0; // Hide intent edges in causal mode mostly
+             if (isTelicEdge || isSupportsIntentEdge) {
+                 opacity = 0; // Hide all intent edges in causal mode
              } else if (isFlowEdge) {
                  strokeColor = '#3b82f6'; // Blue
                  markerId = 'url(#arrowhead-flow)';
@@ -326,6 +375,15 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
 
           if (opacity === 0) return null;
 
+          // Calculate midpoint for label
+          const midX = (x1 + x2) / 2;
+          const midY = (y1 + y2) / 2;
+
+          // Calculate label rotation to align with edge
+          const labelAngle = Math.atan2(dy, dx) * (180 / Math.PI);
+          // Keep label readable (don't flip upside down)
+          const normalizedAngle = labelAngle > 90 || labelAngle < -90 ? labelAngle + 180 : labelAngle;
+
           return (
             <g key={i} opacity={opacity} className="transition-all duration-500">
               <line
@@ -338,6 +396,32 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
                 markerEnd={markerId}
                 strokeDasharray={isTelicEdge ? "3,3" : ""}
               />
+
+              {/* Edge Label - only show in CAUSAL mode and if label exists */}
+              {edge.label && mode === ViewMode.CAUSAL && !isTelicEdge && (
+                <g transform={`translate(${midX}, ${midY})`}>
+                  {/* Background rectangle for readability */}
+                  <rect
+                    x={-edge.label.length * 2.5}
+                    y={-8}
+                    width={edge.label.length * 5}
+                    height={14}
+                    fill="#000000"
+                    opacity="0.8"
+                    rx="2"
+                  />
+                  <text
+                    textAnchor="middle"
+                    dy="3"
+                    fill={isFlowEdge ? "#60a5fa" : "#737373"}
+                    fontSize="8"
+                    className="font-mono font-semibold pointer-events-none"
+                    transform={`rotate(${normalizedAngle})`}
+                  >
+                    {edge.label}
+                  </text>
+                </g>
+              )}
             </g>
           );
         })}
@@ -368,9 +452,15 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
               strokeColor = '#737373';
           }
           
-          // Base Opacity
-          let opacity = mode === ViewMode.TELIC && !isIntent ? 0.6 : 1;
-          
+          // Base Opacity - hide intent nodes in CAUSAL mode
+          let opacity = 1;
+
+          if (mode === ViewMode.CAUSAL && isIntent) {
+              opacity = 0; // Hide intent nodes in causal view
+          } else if (mode === ViewMode.TELIC && !isIntent) {
+              opacity = 0.6; // Dim non-intent nodes in telic view
+          }
+
           // Trace Opacity Override
           if (traceHighlight) {
               if (traceHighlight.relatedNodeIds.includes(node.id)) {
@@ -380,13 +470,17 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
               }
           }
 
+          // Don't render nodes with 0 opacity (unless in trace mode)
+          if (opacity === 0 && !traceHighlight) return null;
+
           const filter = isIntent && mode === ViewMode.TELIC ? "url(#glow-purple)" : undefined;
 
           return (
             <g
               key={node.id}
               transform={`translate(${pos.x}, ${pos.y})`}
-              className="cursor-pointer transition-all duration-300 group"
+              className="cursor-grab active:cursor-grabbing transition-all duration-300 group"
+              onMouseDown={(e) => handleNodeMouseDown(e, node)}
               onClick={() => onNodeClick(node)}
               onDoubleClick={() => handleRecenter(node)}
               style={{ opacity }}
