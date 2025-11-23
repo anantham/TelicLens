@@ -924,11 +924,23 @@ export default function App() {
                 ) : null}
               </div>
             </div>
-            <div className="text-right">
-              <div className="text-[10px] text-yellow-400 font-mono">INTENT SCORE</div>
-              <div className={`text-2xl font-bold ${securityMetrics.score >= 80 ? 'text-green-400' : securityMetrics.score >= 50 ? 'text-yellow-400' : 'text-red-400'}`}>
-                {securityMetrics.score}%
+            <div className="flex items-center gap-4">
+              <div className="text-right">
+                <div className="text-[10px] text-yellow-400 font-mono">INTENT SCORE</div>
+                <div className={`text-2xl font-bold ${securityMetrics.score >= 80 ? 'text-green-400' : securityMetrics.score >= 50 ? 'text-yellow-400' : 'text-red-400'}`}>
+                  {securityMetrics.score}%
+                </div>
               </div>
+              <button
+                onClick={() => {
+                  // Dismiss by clearing analysis highlights but keeping data
+                  setSelectedNode(null);
+                }}
+                className="text-yellow-200 hover:text-white text-lg px-2"
+                aria-label="Dismiss alert"
+              >
+                ×
+              </button>
             </div>
           </div>
         )}
