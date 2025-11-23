@@ -4,6 +4,7 @@ import { extractVariables, variablesToNodes, flowsToEdges } from './variableExtr
 import { checkVariableConsistency, mergeVariableNodes, filterMeaningfulVariables } from './variableConsistencyChecker';
 
 const apiKey = (import.meta as any)?.env?.VITE_API_KEY || process.env.API_KEY || '';
+const DEBUG_ANALYSIS_LOG = ((import.meta as any)?.env?.VITE_DEBUG_ANALYSIS_LOG === 'true');
 
 if (!apiKey) {
   console.error("❌ Missing API key. Set VITE_API_KEY in your environment.");
@@ -341,8 +342,11 @@ export const analyzeCodebase = async (files: { name: string; content: string }[]
 
     if (response.text) {
       console.log("✅ Analysis complete!");
-      console.log("📄 Raw response (first 1000 chars):", response.text.substring(0, 1000));
       console.log("📏 Response length:", response.text.length, "characters");
+      console.log("📄 Raw response (first 1000 chars):", response.text.substring(0, 1000));
+      if (DEBUG_ANALYSIS_LOG) {
+        console.log("📄 Full response:", response.text);
+      }
 
       try {
         const result = { ...(JSON.parse(response.text) as AnalysisResult), fromCache: false };
@@ -354,9 +358,13 @@ export const analyzeCodebase = async (files: { name: string; content: string }[]
         const allFlows: any[] = [];
 
         for (const file of files) {
-          const { variables, flows } = extractVariables(file as CodeFile);
-          allVariables.push(...variables);
-          allFlows.push(...flows);
+          try {
+            const { variables, flows } = extractVariables(file as CodeFile);
+            allVariables.push(...variables);
+            allFlows.push(...flows);
+          } catch (err) {
+            console.warn(`Variable extraction skipped for ${file.name}:`, err);
+          }
         }
 
         // Convert to graph nodes/edges

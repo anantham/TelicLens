@@ -29,10 +29,20 @@ export interface VariableFlowEdge {
 /**
  * Extract all variables from a code file using AST parsing
  */
+const SUPPORTED_LANGS = new Set(['js', 'jsx', 'ts', 'tsx', 'javascript', 'typescript']);
+
 export function extractVariables(file: CodeFile): {
   variables: VariableInfo[];
   flows: VariableFlowEdge[];
 } {
+  const ext = file.name.split('.').pop()?.toLowerCase() || '';
+  const lang = (file.language || '').toLowerCase();
+  const isSupported = SUPPORTED_LANGS.has(ext) || SUPPORTED_LANGS.has(lang);
+  if (!isSupported) {
+    console.warn(`Skipping variable extraction for unsupported language: ${file.name}`);
+    return { variables: [], flows: [] };
+  }
+
   const variables: VariableInfo[] = [];
   const flows: VariableFlowEdge[] = [];
   const scopeStack: string[] = ['global'];
