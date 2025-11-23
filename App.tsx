@@ -760,6 +760,17 @@ export default function App() {
                 <div className="text-[10px] text-yellow-300/70 mt-0.5">
                   These functions have no clear purpose mapping and may indicate code slop or hidden vulnerabilities
                 </div>
+                <button
+                  onClick={() => {
+                    const firstOrphan = securityMetrics.orphanedFunctions[0];
+                    if (firstOrphan) {
+                      handleNodeClick(firstOrphan);
+                    }
+                  }}
+                  className="mt-1 inline-flex items-center gap-1 px-2 py-1 bg-yellow-800/60 hover:bg-yellow-700 text-[10px] text-yellow-100 font-semibold rounded border border-yellow-600 transition-colors"
+                >
+                  View first orphan
+                </button>
               </div>
             </div>
             <div className="text-right">
