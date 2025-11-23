@@ -1,17 +1,52 @@
-# TelicLens Test Fixture: Heartbeat Overread (Heartbleed-Style)
+# TelicLens Test Suite
 
-Purpose: Provide a small, coherent code sample with a latent over-read bug so you can test whether TelicLens surfaces bad intent/misalignment in the graph—without obvious hints in code.
+Automated validation framework for variable-level graph extraction and consistency checking.
 
-System telos (stated intent):
-- Securely handle client heartbeat messages for a chat-like service.
-- Reject malformed input and never leak memory.
+## Overview
 
-Files:
-- `heartbeat.c`: Contains both the vulnerable handler (missing a bounds check, Heartbleed-style) and a fixed variant.
-- `main.c`: Minimal harness showing intended use and telos comments.
+This test suite provides **ground-truth validation** using AST-based analysis (no AI required) to ensure:
 
-How to use:
-1) Load this `test/` folder into TelicLens.
-2) Inspect `heartbeat.c` — trace the flow from client input to copy; ensure the length check matches the actual buffer size.
-3) Compare the code paths to see the intended safe flow.
-4) In Telic view, the handler should serve the “Protect Session Integrity” telos; the bad edge should be marked undermining/contradictory.
+1. **Correctness**: Variable extraction captures all defs/uses/flows
+2. **Consistency**: All variables have nodes, all uses have reachable defs
+3. **Security**: Trust boundary violations and data exfiltration are detected
+4. **Regression prevention**: Snapshots catch unexpected changes
+
+## Running Tests
+
+```bash
+# Run all tests
+npm test
+
+# Run tests once (CI mode)
+npm run test:run
+
+# Run with UI
+npm run test:ui
+
+# Run with coverage
+npm run test:coverage
+```
+
+## Test Categories
+
+### 1. Ground Truth Extraction
+- Extracts parameters, locals, returns
+- Builds data flow edges
+- Tracks scopes correctly
+
+### 2. Safe Code Invariants
+- No orphan uses (except external imports)
+- No unreachable flows
+- User inputs sanitized before database
+
+### 3. Vulnerable Code Detection
+- Orphan definitions (dead code)
+- Trust boundary violations
+- Data exfiltration patterns
+
+### 4. Snapshot Tests
+- Node type distribution
+- Edge type distribution
+- Consistency issue counts
+
+See test/README.md for full documentation.

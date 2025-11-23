@@ -1,0 +1,73 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Graph Structure Snapshots > should detect orphan definition regression > vulnerable-auth-orphan-defs 1`] = `
+[
+  "var:vulnerable-auth.ts:authenticateUser:sanitizedPassword (sanitizedPassword in authenticateUser)",
+]
+`;
+
+exports[`Graph Structure Snapshots > should maintain function scope tracking > safe-auth-scopes 1`] = `
+[
+  "authenticateUser",
+  "generateToken",
+  "global",
+  "signJWT",
+]
+`;
+
+exports[`Graph Structure Snapshots > should match safe-auth graph structure > safe-auth-edge-types 1`] = `
+{
+  "flow": 1,
+}
+`;
+
+exports[`Graph Structure Snapshots > should match safe-auth graph structure > safe-auth-node-types 1`] = `
+{
+  "variable": 22,
+}
+`;
+
+exports[`Graph Structure Snapshots > should match safe-auth graph structure > safe-auth-parameters 1`] = `
+[
+  {
+    "name": "password",
+    "scope": "authenticateUser",
+  },
+  {
+    "name": "payload",
+    "scope": "signJWT",
+  },
+  {
+    "name": "userId",
+    "scope": "generateToken",
+  },
+  {
+    "name": "username",
+    "scope": "authenticateUser",
+  },
+]
+`;
+
+exports[`Graph Structure Snapshots > should match vulnerable-auth graph structure > vulnerable-auth-issues 1`] = `
+{
+  "missingNodes": 0,
+  "orphanDefs": 1,
+  "orphanUses": 18,
+  "trustBoundaryViolations": 0,
+  "unreachableFlows": 19,
+}
+`;
+
+exports[`Graph Structure Snapshots > should match vulnerable-auth graph structure > vulnerable-auth-node-types 1`] = `
+{
+  "variable": 30,
+}
+`;
+
+exports[`Graph Structure Snapshots > should track variable kinds distribution > safe-auth-variable-kinds 1`] = `
+{
+  "local": 17,
+  "parameter": 4,
+  "return": 1,
+}
+`;

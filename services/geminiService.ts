@@ -1,5 +1,7 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { AnalysisResult, TraceResult } from "../types";
+import { AnalysisResult, TraceResult, CodeFile } from "../types";
+import { extractVariables, variablesToNodes, flowsToEdges } from './variableExtractor';
+import { checkVariableConsistency, mergeVariableNodes, filterMeaningfulVariables } from './variableConsistencyChecker';
 
 const apiKey = (import.meta as any)?.env?.VITE_API_KEY || process.env.API_KEY || '';
 
@@ -131,6 +133,11 @@ export const analyzeCodebase = async (files: { name: string; content: string }[]
     - Data stores/databases (type: 'data')
     - **System-level intents** (type: 'intent') - e.g., "User Authentication", "Data Integrity", "Privacy Protection"
     - **User inputs/events** (type: 'event') - e.g., "keydown:W", "click:Start", "HTTP POST /login"
+    - **Variables** (type: 'variable') - OPTIONAL, only when detailed data flow analysis is requested:
+      * Focus on meaningful variables: parameters, return values, key data structures, inputs/outputs
+      * Skip temporary variables and loop counters to reduce noise
+      * Include variables that cross trust boundaries (user input → sanitization → database)
+      * Tag variables with their scope (function/class/module) and kind (parameter/local/return/field/global)
 
     **For each function node, provide:**
     - Clear description of WHAT it does (mechanistic)
@@ -291,7 +298,7 @@ export const analyzeCodebase = async (files: { name: string; content: string }[]
                 properties: {
                   id: { type: Type.STRING },
                   label: { type: Type.STRING },
-                  type: { type: Type.STRING, enum: ['file', 'function', 'data', 'intent'] },
+                  type: { type: Type.STRING, enum: ['file', 'function', 'data', 'intent', 'variable'] },
                   description: { type: Type.STRING },
                   intent: { type: Type.STRING, description: "The teleological purpose of this node" },
                   inputs: { type: Type.ARRAY, items: { type: Type.STRING } },
@@ -340,6 +347,36 @@ export const analyzeCodebase = async (files: { name: string; content: string }[]
       try {
         const result = { ...(JSON.parse(response.text) as AnalysisResult), fromCache: false };
         console.log(`📊 Found ${result.nodes.length} nodes, ${result.edges.length} edges`);
+
+        // Extract variables from AST for detailed data flow analysis
+        console.log("🔬 Extracting variable-level data flows...");
+        const allVariables: any[] = [];
+        const allFlows: any[] = [];
+
+        for (const file of files) {
+          const { variables, flows } = extractVariables(file as CodeFile);
+          allVariables.push(...variables);
+          allFlows.push(...flows);
+        }
+
+        // Convert to graph nodes/edges
+        let variableNodes = variablesToNodes(allVariables);
+        const variableEdges = flowsToEdges(allFlows);
+
+        // Filter to meaningful variables only
+        variableNodes = filterMeaningfulVariables(variableNodes);
+
+        console.log(`🔬 Extracted ${variableNodes.length} meaningful variables, ${variableEdges.length} flows`);
+
+        // Merge with AI-generated nodes
+        result.nodes = mergeVariableNodes(result.nodes, variableNodes);
+        result.edges = [...result.edges, ...variableEdges];
+
+        // Run consistency check
+        const consistencyReport = checkVariableConsistency(result.nodes, result.edges);
+        result.variableConsistency = consistencyReport;
+
+        console.log("✅ Variable consistency check:", consistencyReport.summary);
 
         // Cache the result
         setCachedAnalysis(cacheKey, result);

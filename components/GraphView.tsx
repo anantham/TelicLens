@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react'
 import { AnalysisResult, GraphNode, GraphEdge, ViewMode, TraceResult } from '../types';
 import { ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
 import dagre from 'dagre';
+import { clusterNodesByZoomLevel, ZoomLevel } from '../services/zoomClustering';
 
 interface GraphViewProps {
   data: AnalysisResult | null;
@@ -28,10 +29,18 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [hoveredEdge, setHoveredEdge] = useState<{ edge: GraphEdge; midX: number; midY: number } | null>(null);
   const [hoveredNode, setHoveredNode] = useState<{ node: GraphNode; x: number; y: number } | null>(null);
+  const [detailLevel, setDetailLevel] = useState<ZoomLevel>(1); // 0=variable, 1=function, 2=file, 3=intent
+
+  // Apply clustering based on detail level
+  const clusteredData = useMemo(() => {
+    if (!data) return null;
+    const { nodes, edges } = clusterNodesByZoomLevel(data.nodes, data.edges, detailLevel);
+    return { ...data, nodes, edges };
+  }, [data, detailLevel]);
 
   // Dagre-based auto layout to reduce crossings
   const computeLayout = useCallback(() => {
-    if (!data) return;
+    if (!clusteredData) return;
 
     const g = new dagre.graphlib.Graph();
     const isCausal = mode === ViewMode.CAUSAL;
@@ -47,13 +56,13 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
     g.setDefaultEdgeLabel(() => ({}));
 
     // Decide which nodes participate in this layout
-    const nodesForLayout = data.nodes.filter(n => {
+    const nodesForLayout = clusteredData.nodes.filter(n => {
       if (isCausal) {
         return n.type !== 'intent'; // keep code-centric nodes only
       }
       // Telic: include intents and functions serving intents
       if (n.type === 'intent') return true;
-      return data.edges.some(e =>
+      return clusteredData.edges.some(e =>
         (e.type === 'serves_intent' && (e.source === n.id || e.target === n.id)) ||
         (e.type === 'supports_intent' && (e.source === n.id || e.target === n.id))
       );
@@ -69,7 +78,7 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
     });
 
     // Choose edges relevant for each mode
-    const layoutEdges = data.edges.filter(edge => {
+    const layoutEdges = clusteredData.edges.filter(edge => {
       if (isCausal) {
         return edge.type === 'dependency' || edge.type === 'flow';
       }
@@ -93,7 +102,7 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
     });
 
     // Fallback for any nodes not in dagre layout (place near origin)
-    data.nodes.forEach(n => {
+    clusteredData.nodes.forEach(n => {
       if (!newPositions[n.id]) newPositions[n.id] = { x: 50, y: 50 };
     });
 
@@ -103,7 +112,7 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
     const graphWidth = (g.graph().width || 800) + 160;
     const graphHeight = (g.graph().height || 600) + 160;
     setViewBox({ x: 0, y: 0, width: graphWidth, height: graphHeight });
-  }, [data, mode]);
+  }, [clusteredData, mode]);
 
   useEffect(() => {
     computeLayout();
@@ -277,12 +286,12 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
   const reciprocalEdges = useMemo(() => {
     const set = new Set<string>();
     const edgePairs = new Set<string>();
-    if (!data) return set;
-    data.edges.forEach(e => {
+    if (!clusteredData) return set;
+    clusteredData.edges.forEach(e => {
       const key = `${e.source}->${e.target}`;
       edgePairs.add(key);
     });
-    data.edges.forEach(e => {
+    clusteredData.edges.forEach(e => {
       const forward = `${e.source}->${e.target}`;
       const reverse = `${e.target}->${e.source}`;
       if (edgePairs.has(reverse)) {
@@ -290,7 +299,7 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
       }
     });
     return set;
-  }, [data]);
+  }, [clusteredData]);
 
   if (!data) return <div className="flex items-center justify-center h-full text-neutral-500 font-mono text-sm animate-pulse">AWAITING CODEBASE...</div>;
 
@@ -300,6 +309,37 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
       <div className="absolute top-4 right-4 px-3 py-1 bg-black/80 backdrop-blur-sm text-[10px] font-bold tracking-widest text-neutral-500 rounded border border-neutral-800 pointer-events-none uppercase z-10">
         MODE: {mode}
       </div>
+
+      {/* Variable Consistency Report */}
+      {data?.variableConsistency && (
+        <div className="absolute top-16 right-4 px-3 py-2 bg-black/80 backdrop-blur-sm text-[10px] text-neutral-200 rounded border border-neutral-800 z-10 max-w-xs">
+          <div className="font-bold text-neutral-400 mb-2 uppercase tracking-wider">Variable Consistency</div>
+          <div className="space-y-1 text-[9px]">
+            {data.variableConsistency.orphanDefs.length > 0 && (
+              <div className="text-amber-400">⚠️ {data.variableConsistency.orphanDefs.length} orphan definitions</div>
+            )}
+            {data.variableConsistency.orphanUses.length > 0 && (
+              <div className="text-red-400">⚠️ {data.variableConsistency.orphanUses.length} orphan uses</div>
+            )}
+            {data.variableConsistency.unreachableFlows.length > 0 && (
+              <div className="text-orange-400">⚠️ {data.variableConsistency.unreachableFlows.length} unreachable flows</div>
+            )}
+            {data.variableConsistency.trustBoundaryViolations.length > 0 && (
+              <div className="text-red-500">🚨 {data.variableConsistency.trustBoundaryViolations.length} trust boundary violations</div>
+            )}
+            {data.variableConsistency.missingNodes.length > 0 && (
+              <div className="text-yellow-400">⚠️ {data.variableConsistency.missingNodes.length} missing nodes</div>
+            )}
+            {data.variableConsistency.orphanDefs.length === 0 &&
+             data.variableConsistency.orphanUses.length === 0 &&
+             data.variableConsistency.unreachableFlows.length === 0 &&
+             data.variableConsistency.trustBoundaryViolations.length === 0 &&
+             data.variableConsistency.missingNodes.length === 0 && (
+              <div className="text-green-400">✅ All variables consistent</div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Risk Legend */}
       {showRiskOverlay && (
@@ -364,6 +404,32 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
         </button>
       </div>
 
+      {/* Detail Level Controls */}
+      <div className="absolute top-4 left-20 flex flex-col gap-1 z-10 bg-black/80 backdrop-blur-sm rounded border border-neutral-800 p-2">
+        <div className="text-[9px] text-neutral-500 uppercase tracking-wider mb-1">Detail Level</div>
+        <div className="flex flex-col gap-1">
+          {[
+            { level: 0 as ZoomLevel, label: 'VAR', title: 'Variable-level (finest granularity)' },
+            { level: 1 as ZoomLevel, label: 'FUNC', title: 'Function-level clustering' },
+            { level: 2 as ZoomLevel, label: 'FILE', title: 'File-level clustering' },
+            { level: 3 as ZoomLevel, label: 'INTENT', title: 'Intent-level (coarsest)' },
+          ].map(({ level, label, title }) => (
+            <button
+              key={level}
+              onClick={() => setDetailLevel(level)}
+              className={`px-2 py-1 text-[10px] font-mono rounded transition-colors ${
+                detailLevel === level
+                  ? 'bg-purple-600 text-white'
+                  : 'bg-neutral-900 text-neutral-400 hover:bg-neutral-800 hover:text-white'
+              }`}
+              title={title}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Instruction Hint */}
       <div className="absolute bottom-4 right-4 px-3 py-1 bg-black/60 backdrop-blur-sm text-[9px] text-neutral-600 rounded border border-neutral-800 pointer-events-none z-10">
         💡 Mouse wheel to zoom • Drag to pan • Double-click node to recenter
@@ -408,9 +474,9 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
         </defs>
         
         {/* Edges */}
-        {data.edges.map((edge, i) => {
-          const startNode = data.nodes.find(n => n.id === edge.source);
-          const endNode = data.nodes.find(n => n.id === edge.target);
+        {clusteredData.edges.map((edge, i) => {
+          const startNode = clusteredData.nodes.find(n => n.id === edge.source);
+          const endNode = clusteredData.nodes.find(n => n.id === edge.target);
           
           const startPos = positions[edge.source];
           const endPos = positions[edge.target];
@@ -594,7 +660,7 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
         })}
 
         {/* Nodes */}
-        {data.nodes.map((node) => {
+        {clusteredData.nodes.map((node) => {
           const pos = positions[node.id];
           if (!pos) return null;
           
@@ -622,6 +688,9 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
           } else if (node.type === 'event') {
               fillColor = '#0b1f2d';
               strokeColor = '#14b8a6';
+          } else if (node.type === 'variable') {
+              fillColor = '#1e1b4b'; // Indigo dark
+              strokeColor = '#818cf8'; // Indigo light
           }
           
           // Base Opacity - hide intent nodes in CAUSAL mode
