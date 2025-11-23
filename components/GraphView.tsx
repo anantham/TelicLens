@@ -189,7 +189,6 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
 
   // Mouse wheel zoom
   const handleWheel = (e: React.WheelEvent<SVGSVGElement>) => {
-    e.preventDefault();
     const direction = e.deltaY > 0 ? 'out' : 'in';
     handleZoom(direction);
   };
