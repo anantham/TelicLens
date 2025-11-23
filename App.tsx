@@ -888,29 +888,40 @@ export default function App() {
         </div>
 
         {/* Security Alert Banner */}
-        {securityMetrics && securityMetrics.orphanedFunctions.length > 0 && (
+        {securityMetrics && (securityMetrics.orphanedFunctions.length > 0 || analysis?.telicAudit?.contradictions?.length || analysis?.telicAudit?.suspiciousCapture?.length) && (
           <div className="px-6 py-3 bg-yellow-900/30 border-b border-yellow-500/30 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="text-yellow-500 text-xl">⚠️</div>
-              <div>
-                <div className="text-xs font-bold text-yellow-200">
-                  SECURITY ALERT: {securityMetrics.orphanedFunctions.length} Orphaned Function{securityMetrics.orphanedFunctions.length > 1 ? 's' : ''} Detected
-                </div>
-                <div className="text-[10px] text-yellow-300/70 mt-0.5">
-                  These functions have no clear purpose mapping and may indicate code slop or hidden vulnerabilities
-                </div>
-                <button
-                  onClick={() => {
-                    const firstOrphan = securityMetrics.orphanedFunctions[0];
-                    if (firstOrphan) {
-                      setViewMode(ViewMode.CAUSAL);
-                      handleNodeClick(firstOrphan);
-                    }
-                  }}
-                  className="mt-1 inline-flex items-center gap-1 px-2 py-1 bg-yellow-800/60 hover:bg-yellow-700 text-[10px] text-yellow-100 font-semibold rounded border border-yellow-600 transition-colors"
-                >
-                  View first orphan
-                </button>
+              <div className="space-y-1">
+                {securityMetrics.orphanedFunctions.length > 0 && (
+                  <div>
+                    <div className="text-xs font-bold text-yellow-200">
+                      {securityMetrics.orphanedFunctions.length} Orphaned Function{securityMetrics.orphanedFunctions.length > 1 ? 's' : ''} Detected
+                    </div>
+                    <button
+                      onClick={() => {
+                        const firstOrphan = securityMetrics.orphanedFunctions[0];
+                        if (firstOrphan) {
+                          setViewMode(ViewMode.CAUSAL);
+                          handleNodeClick(firstOrphan);
+                        }
+                      }}
+                      className="mt-1 inline-flex items-center gap-1 px-2 py-1 bg-yellow-800/60 hover:bg-yellow-700 text-[10px] text-yellow-100 font-semibold rounded border border-yellow-600 transition-colors"
+                    >
+                      View first orphan
+                    </button>
+                  </div>
+                )}
+                {analysis?.telicAudit?.contradictions?.length ? (
+                  <div className="text-xs font-bold text-red-200">
+                    {analysis.telicAudit.contradictions.length} Contradictory flow{analysis.telicAudit.contradictions.length > 1 ? 's' : ''} detected
+                  </div>
+                ) : null}
+                {analysis?.telicAudit?.suspiciousCapture?.length ? (
+                  <div className="text-xs font-bold text-orange-200">
+                    {analysis.telicAudit.suspiciousCapture.length} Suspicious capture{analysis.telicAudit.suspiciousCapture.length > 1 ? 's' : ''} detected
+                  </div>
+                ) : null}
               </div>
             </div>
             <div className="text-right">
