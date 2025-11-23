@@ -11,17 +11,21 @@ interface GraphViewProps {
   traceHighlight: TraceResult | null;
 }
 
-// Helper to get node radius based on type
-const getNodeRadius = (type: string) => {
-    switch (type) {
-      case 'intent': return 35;
-      case 'file': return 28;
-      case 'function': return 24;
-      case 'data': return 22;
-      case 'event': return 20;
-      case 'variable': return 16;
-      default: return 22;
-    }
+// Helper to get node radius based on type and label length
+const getNodeRadius = (type: string, labelLength: number = 0) => {
+    const base = (() => {
+      switch (type) {
+        case 'intent': return 38;
+        case 'file': return 32;
+        case 'function': return 26;
+        case 'data': return 24;
+        case 'event': return 22;
+        case 'variable': return 18;
+        default: return 24;
+      }
+    })();
+    const extra = Math.min(20, Math.max(0, (labelLength - 10) * 0.6));
+    return base + extra;
 };
 
 export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, traceHighlight }) => {
@@ -82,10 +86,10 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
 
     // Add nodes with approximate size (label length to give dagre more room)
     nodesForLayout.forEach(node => {
-      const radius = getNodeRadius(node.type);
-      const labelWidth = Math.max(node.label.length * 7, 60);
+      const radius = getNodeRadius(node.type, node.label.length);
+      const labelWidth = Math.max(node.label.length * 7, 80);
       const width = radius * 2 + labelWidth;
-      const height = radius * 2 + 20;
+      const height = radius * 2 + 30;
       g.setNode(node.id, { width, height });
     });
 
@@ -683,7 +687,7 @@ export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, t
           const isIntent = node.type === 'intent';
           const isOrphan = riskSets.orphanIds.has(node.id);
           const isSuspicious = riskSets.suspiciousIds.has(node.id);
-          const radius = getNodeRadius(node.type);
+          const radius = getNodeRadius(node.type, node.label.length);
           
           // Colors
           let fillColor = '#171717';
