@@ -12,9 +12,17 @@ interface GraphViewProps {
 }
 
 // Helper to get node radius based on type
-  const getNodeRadius = (type: string) => {
-      return type === 'intent' ? 35 : 25;
-  };
+const getNodeRadius = (type: string) => {
+    switch (type) {
+      case 'intent': return 35;
+      case 'file': return 28;
+      case 'function': return 24;
+      case 'data': return 22;
+      case 'event': return 20;
+      case 'variable': return 16;
+      default: return 22;
+    }
+};
 
 export const GraphView: React.FC<GraphViewProps> = ({ data, mode, onNodeClick, traceHighlight }) => {
   const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>({});
