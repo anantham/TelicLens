@@ -362,7 +362,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <span className="text-xs font-mono text-blue-400">{activeFile.name}</span>
                     <span className="text-[10px] text-neutral-600 uppercase">{activeFile.language}</span>
                  </div>
-                 <div className="flex-1 overflow-auto bg-neutral-900/80">
+                    <div className="flex-1 overflow-auto bg-neutral-900/80">
                     {locationNavigator && currentLocation && (
                       <div className="sticky top-0 z-10 flex items-center justify-between gap-3 px-4 py-2 bg-blue-900/30 border-b border-blue-700/30 backdrop-blur">
                         <div className="flex flex-col">
@@ -435,26 +435,29 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         <code className="font-mono text-xs text-neutral-300 block pb-12">
                             {activeFile.content.split('\n').map((line, i) => {
                                 const lineNumber = i + 1;
+                                const startLine = currentLocation?.startLine || 1;
+                                const endLine = currentLocation?.endLine || currentLocation?.startLine || 1;
                                 const inLocationRange = currentLocation
                                   && activeFile.name === currentLocation.file
-                                  && lineNumber >= currentLocation.startLine
-                                  && lineNumber <= currentLocation.endLine;
+                                  && lineNumber >= startLine
+                                  && lineNumber <= endLine;
                                 const shouldShowComment = currentLocation
                                   && activeFile.name === currentLocation.file
-                                  && currentLocation.aiComment
-                                  && lineNumber === currentLocation.startLine;
+                                  && lineNumber === startLine;
 
                                 const textHighlighted = highlightedText && line.includes(highlightedText);
                                 const showHighlight = inLocationRange || textHighlighted;
 
+                                const commentText = currentLocation?.aiComment || locationNavigator?.nodeContext.description;
+
                                 return (
                                   <React.Fragment key={i}>
-                                    {shouldShowComment && (
+                                    {shouldShowComment && commentText && (
                                       <div className="flex min-w-fit bg-blue-900/20 border-l-2 border-blue-500/70 px-3 py-2 mb-1">
                                         <span className="text-neutral-600 select-none w-8 text-right pr-3 flex-shrink-0">//</span>
                                         <div className="whitespace-pre-wrap text-[11px] text-blue-100 leading-snug">
                                           <div className="font-semibold text-blue-200">TelicLens: {locationNavigator?.nodeContext.label}</div>
-                                          <div>{currentLocation.aiComment}</div>
+                                          <div>{commentText}</div>
                                         </div>
                                       </div>
                                     )}
